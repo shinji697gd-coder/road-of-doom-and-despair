@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.6",
+  "version": "v1.0.0-beta.1",
   "developer": "Gayan",
-  "description": "Roadmap de 75 niveaux. Nouvelle icone : vraie capture du gameplay de Nullscapes.",
+  "description": "Bêta : 75 niveaux, recherche, progression sauvegardée, filtres et boutons VIEW natifs.",
   "tags": [
     "interface",
     "utility"
