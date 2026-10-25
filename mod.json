@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v1.0.0-beta.2",
+  "version": "v1.0.0-beta.3",
   "developer": "Gayan",
-  "description": "Personal training roadmap: 75 levels, native VIEW, local progress, notes, runs and startpos markers.",
+  "description": "Parcours personnel de 75 niveaux : VIEW, progression locale, notes, runs et startpos.",
   "tags": [
     "interface",
     "utility"
@@ -18,17 +18,17 @@
   "settings": {
     "safe-mode": {
       "type": "bool",
-      "name": "Safe Mode",
+      "name": "Mode securise",
       "default": true
     },
     "auto-sync-progress": {
       "type": "bool",
-      "name": "Read GD progress",
+      "name": "Lire la progression GD",
       "default": true
     },
     "diagnostic-logging": {
       "type": "bool",
-      "name": "Diagnostic logs",
+      "name": "Logs de diagnostic",
       "default": true
     }
   }

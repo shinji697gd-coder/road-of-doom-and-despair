@@ -1,31 +1,37 @@
-# The Road of Doom and Despair — beta.2
+# The Road of Doom and Despair — bêta.3
 
-Windows / Geometry Dash 2.2081 / Geode 5.11.2.
+Mod pour Windows, Geometry Dash 2.2081 et Geode 5.11.2.
 
-75 original levels and native VIEW buttons are preserved. ROADMAP, STARTPOS and PROGRESSION share a compact strip under the title. Pagination and refresh stay in the footer. The surrounding window uses neutral panels with the game's fonts; texture packs can still style native level cells.
+L'interface est en français. Les termes de jeu comme startpos, runs, grind et VIEW ainsi que les noms des niveaux sont conservés. Les libellés en jeu utilisent des caractères simples compatibles avec la police de GD.
 
-The small **i** button beside a level opens three separate pages:
+Les 75 niveaux du parcours et leurs boutons VIEW natifs sont conservés. Les onglets PARCOURS, STARTPOS et PROGRESSION se trouvent sous le titre. La pagination et le bouton ACTUALISER sont en bas de la fenêtre.
 
-- **OVERVIEW**: normal best, training status, favorite, current goal and notes. Notes save when switching pages or closing.
-- **RUNS**: add a segment, select an existing row to edit it, or delete the selected run.
-- **STARTPOS**: name and percentage markers. Select a row to rename/change it, use NEW to clear the editor, or DELETE to remove the selected marker.
+Le bouton **i** à côté d'un niveau ouvre sa fiche :
 
-The main STARTPOS section shows saved levels. CHOOSE A LEVEL or ALL LEVELS also lets you create the first marker. These are partial percentage markers; launching from a native start position remains unimplemented.
+- **APERCU** : record normal, statut, favori, objectif et notes. Les notes sont enregistrées en changeant de page ou en fermant la fiche.
+- **RUNS** : ajoute un segment, sélectionne une ligne pour le modifier ou supprime le run sélectionné.
+- **STARTPOS** : enregistre un nom et un pourcentage de départ. Sélectionne une ligne pour la modifier. NOUVEAU vide le formulaire et SUPPRIMER retire le startpos sélectionné.
 
-**TOOLS** groups export, restore and mod settings in one popup. Export writes training-backup.json in the mod save directory. Restore validates the entire file, asks for confirmation, and preserves the previous raw save before replacement. Safe Mode is reserved for the experimental engine; this build has no experimental gameplay hooks.
+L'onglet STARTPOS affiche les niveaux ayant des repères enregistrés. CHOISIR UN NIVEAU ou le filtre TOUS permet d'en ajouter un premier. Ces repères contiennent un pourcentage ; le lancement du niveau depuis un startpos reste à développer.
 
-Progress is read from saved GD levels and loaded level objects; a lower value never reduces the local best. Old manual DONE flags remain preserved but are not counted as native completions. Search, filters and page are retained per view when switching sections. A local level-info cache, serialized requests and stale-response checks prevent late responses replacing the selected screen.
+**OUTILS** regroupe l'export, la restauration et les paramètres du mod. L'export crée training-backup.json dans le dossier de sauvegarde du mod. La restauration valide le fichier, demande confirmation et conserve une copie de secours des données actuelles. Le mode sécurisé est réservé au futur moteur expérimental ; cette version n'ajoute aucun hook expérimental de gameplay.
 
-## Verification
+La progression est lue depuis les niveaux sauvegardés de GD et les objets de niveau chargés. Le meilleur pourcentage local ne diminue pas. Les anciennes coches manuelles DONE restent conservées mais ne comptent pas comme des victoires natives. La recherche, le filtre et la page sont conservés séparément pour chaque vue.
+
+## Installation et sauvegardes
+
+Remplace l'ancien fichier .geode par la bêta.3. Les sauvegardes des bêta.1 et bêta.2 restent compatibles : aucun changement du format ni des identifiants de stockage.
+
+## Vérification
 
     python scripts/check_roadmap.py
     c++ -std=c++20 tests/training_data.cpp -o training_data && ./training_data
     c++ -std=c++20 tests/layout.cpp -o layout_tests && ./layout_tests
 
-The bounds test checks that title, tabs, search, list and footer occupy separate zones, including screen scaling. It does not render Cocos or validate texture-pack hooks. Windows builds run in GitHub Actions.
+Les contrôles de dimensions vérifient la séparation des zones d'interface et leur adaptation à la taille d'écran. Ils ne remplacent pas un test de rendu dans GD avec les mods et textures installés. La compilation Windows s'exécute dans GitHub Actions.
 
-See [manual tests and remaining work](docs/BETA_TEST_MATRIX.md) and [save format](docs/SAVE_SCHEMA.md). This build does not complete the entire design report. Do not merge main before in-game validation.
+Voir les [tests en jeu et fonctions restantes](docs/BETA_TEST_MATRIX.md) et le [format de sauvegarde](docs/SAVE_SCHEMA.md). Ne pas fusionner dans main avant validation en jeu.
 
-## Credits
+## Crédits
 
-Interface/search approach adapted from Integrated Demonlist (MIT); see LICENSE-IntegratedDemonlist. The existing build downloads a Nullscapes screenshot via scripts/prepare_logo.py; the image and game belong to their respective owners.
+L'interface et la recherche s'inspirent d'Integrated Demonlist (MIT) ; voir LICENSE-IntegratedDemonlist. Le build existant télécharge une capture de Nullscapes via scripts/prepare_logo.py. Le jeu, le niveau et l'image appartiennent à leurs titulaires respectifs.

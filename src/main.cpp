@@ -40,7 +40,7 @@ std::string lower(std::string value) {
     return value;
 }
 
-constexpr char const* filters[] = {"ALL", "TO DO", "DONE", "FAVORITES", "GOAL"};
+constexpr char const* filters[] = {"TOUS", "A FAIRE", "TERMINES", "FAVORIS", "OBJECTIF"};
 }
 
 class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
@@ -129,20 +129,20 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     }
 
     void updateChrome() {
-        static constexpr char const* names[] = {"ROADMAP", "STARTPOS", "PROGRESSION"};
+        static constexpr char const* names[] = {"PARCOURS", "STARTPOS", "PROGRESSION"};
         for (int i = 0; i < 3; ++i)
             roadui::updateButton(m_tabs[i], names[i], m_tab == i);
         m_toolbar->setVisible(m_tab != 2);
         m_dashboardHeading->setVisible(m_tab == 2);
         if (m_tab != 2) {
             const auto caption = m_tab == 1 ?
-                (m_showAllStartpos ? "ALL LEVELS" : "SAVED ONLY") : filters[view().filter];
+                (m_showAllStartpos ? "TOUS" : "ENREGISTRES") : filters[view().filter];
             roadui::updateButton(m_filter, caption);
         }
         const auto& store = training::Store::get();
         const auto done = std::count_if(m_roadmap.begin(), m_roadmap.end(),
             [&store](Entry const& entry) { return store.levels.at(entry.id).best == 100; });
-        m_progress->setString(fmt::format("{} / 75 done", done).c_str());
+        m_progress->setString(fmt::format("{} / 75 termines", done).c_str());
         m_progress->limitLabelWidth(100, .28f, .18f);
 
         const bool hasPages = m_tab != 2 && !m_results.empty();
@@ -165,15 +165,15 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         using namespace roadui::layout;
         clearContent();
         const bool emptyStartpos = m_tab == 1 && !m_showAllStartpos && view().query.empty();
-        roadui::label(m_content, emptyStartpos ? "NO STARTPOS SAVED" : "NO MATCHING LEVELS",
+        roadui::label(m_content, emptyStartpos ? "AUCUN STARTPOS" : "AUCUN RESULTAT",
                       contentWidth / 2, 110, contentWidth - 28, .44f);
         roadui::label(m_content, emptyStartpos ?
-                      "Choose a level to create your first practice marker." :
-                      "Try another name, ID or filter.",
+                      "Choisis un niveau pour creer ton premier startpos." :
+                      "Essaie un autre nom, ID ou filtre.",
                       contentWidth / 2, 83, contentWidth - 28, .27f, roadui::muted);
         auto actions = roadui::menu(m_content);
         roadui::button(actions, this, menu_selector(RoadmapListLayer::onResetSearch),
-                       emptyStartpos ? "CHOOSE A LEVEL" : "CLEAR SEARCH",
+                       emptyStartpos ? "CHOISIR UN NIVEAU" : "TOUT AFFICHER",
                        contentWidth / 2, 46, 188, 26, true);
         updateChrome();
     }
@@ -213,11 +213,11 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             auto row = roadui::panel(m_scroll->m_contentLayer, 0, y + 2,
                                      contentWidth, rowHeight - 4);
             roadui::label(row, entry.name, 12, 34, 294, .42f, roadui::text, true);
-            roadui::label(row, count ? fmt::format("{} saved markers", count) : "No saved markers",
+            roadui::label(row, count ? fmt::format("{} startpos enregistres", count) : "Aucun startpos enregistre",
                           12, 14, 290, .26f, roadui::muted, true);
             auto actions = roadui::menu(row);
             auto button = roadui::button(actions, this, menu_selector(RoadmapListLayer::onDetail),
-                                         count ? "MANAGE" : "ADD",
+                                         count ? "GERER" : "AJOUTER",
                                          contentWidth - 56, 26, 94, 25, count > 0);
             button->setTag(static_cast<int>(index));
         }
@@ -230,7 +230,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         clearContent();
         auto& store = training::Store::get();
         int done = 0, favorites = 0, runs = 0, presets = 0;
-        std::string goal = "Choose a current goal";
+        std::string goal = "Choisis un objectif";
         int goalBest = 0;
         for (auto const& entry : m_roadmap) {
             const auto& p = store.levels[entry.id];
@@ -241,18 +241,18 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             if (entry.id == store.goal) { goal = entry.name; goalBest = p.best; }
         }
         auto complete = roadui::panel(m_content, 0, 103, 138, 73);
-        roadui::label(complete, "COMPLETED", 69, 55, 122, .27f, roadui::muted);
+        roadui::label(complete, "TERMINES", 69, 55, 122, .27f, roadui::muted);
         roadui::label(complete, fmt::format("{} / 75", done), 69, 26, 122, .64f, roadui::green);
         auto goalCard = roadui::panel(m_content, 146, 103, 286, 73);
-        roadui::label(goalCard, "CURRENT GOAL", 12, 55, 260, .27f, roadui::muted, true);
+        roadui::label(goalCard, "OBJECTIF ACTUEL", 12, 55, 260, .27f, roadui::muted, true);
         roadui::label(goalCard, goal, 12, 31, 260, .44f, roadui::text, true);
-        roadui::label(goalCard, store.goal ? fmt::format("Normal best: {}%", goalBest) :
-                      "Open a level's Overview to set it.",
+        roadui::label(goalCard, store.goal ? fmt::format("Record normal : {}%", goalBest) :
+                      "Choisis-le dans l'apercu d'un niveau.",
                       12, 12, 260, .24f, roadui::muted, true);
         roadui::rect(m_content, 0, 85, contentWidth, 8, roadui::surface);
         roadui::rect(m_content, 0, 85, contentWidth * done / 75.f, 8, roadui::selectedFill);
 
-        const char* labels[] = {"FAVORITES", "RUNS", "STARTPOS"};
+        const char* labels[] = {"FAVORIS", "RUNS", "STARTPOS"};
         const int values[] = {favorites, runs, presets};
         for (int i = 0; i < 3; ++i) {
             auto card = roadui::panel(m_content, i * 146.f, 10, 140, 63);
@@ -311,8 +311,8 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
                 roadui::label(row, entry.name, 14, 59, nativeCellWidth - 30, .49f,
                               roadui::text, true);
                 roadui::label(row, fmt::format("ID {}  /  {}", entry.id,
-                              m_inFlight ? std::string("Loading...") :
-                              (m_networkMessage.empty() ? "Info unavailable - Refresh to retry" : m_networkMessage)),
+                              m_inFlight ? std::string("Chargement...") :
+                              (m_networkMessage.empty() ? "Infos indisponibles - Actualise pour reessayer" : m_networkMessage)),
                               14, 29, nativeCellWidth - 30, .26f, roadui::muted, true);
             }
             // RDoD owns a narrow gutter outside the native cell. Nothing is
@@ -361,7 +361,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
 
     void onRequestTimeout(float) {
         stopRequest();
-        m_networkMessage = "Loading timed out. Use Refresh to try again.";
+        m_networkMessage = "Delai depasse. Actualise pour reessayer.";
         if (m_tab == 0) renderRoadmap();
     }
 
@@ -383,7 +383,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         if (missing.empty()) { renderRoadmap(); return; }
         auto manager = GameLevelManager::get();
         if (manager->m_levelManagerDelegate && manager->m_levelManagerDelegate != this) {
-            m_networkMessage = "Another level request is running. Use Refresh to retry.";
+            m_networkMessage = "Une autre requete est en cours. Actualise pour reessayer.";
             renderRoadmap();
             return;
         }
@@ -531,9 +531,9 @@ public:
         roadui::button(header, this, menu_selector(RoadmapListLayer::onBack),
                        "<", 31, 288, 26, 22);
         roadui::button(header, this, menu_selector(RoadmapListLayer::onTools),
-                       "TOOLS", width - 42, 288, 64, 22);
+                       "OUTILS", width - 42, 288, 64, 22);
 
-        static constexpr char const* tabNames[] = {"ROADMAP", "STARTPOS", "PROGRESSION"};
+        static constexpr char const* tabNames[] = {"PARCOURS", "STARTPOS", "PROGRESSION"};
         auto tabs = roadui::menu(m_window);
         for (int i = 0; i < 3; ++i) {
             const auto bounds = roadui::layout::tab(i);
@@ -547,14 +547,14 @@ public:
         m_toolbar = CCNode::create();
         m_toolbar->setPosition({toolbar.x, toolbar.y});
         m_window->addChild(m_toolbar);
-        m_search = roadui::input(m_toolbar, 142, 12, 284, "Search by level name or ID...");
+        m_search = roadui::input(m_toolbar, 142, 12, 284, "Rechercher un niveau ou un ID...");
         m_search->setMaxCharCount(80);
         auto searchActions = roadui::menu(m_toolbar);
         roadui::button(searchActions, this, menu_selector(RoadmapListLayer::onSearch),
-                       "GO", 305, 12, 32, 24);
+                       "OK", 305, 12, 32, 24);
         m_filter = roadui::button(searchActions, this, menu_selector(RoadmapListLayer::onFilter),
-                                  "ALL", 380, 12, 96, 24);
-        m_dashboardHeading = roadui::label(m_window, "YOUR ROAD TO NULLSCAPES",
+                                  "TOUS", 380, 12, 96, 24);
+        m_dashboardHeading = roadui::label(m_window, "TON PARCOURS VERS NULLSCAPES",
                                           width / 2, 230, contentWidth, .3f, roadui::muted);
         m_dashboardHeading->setVisible(false);
 
@@ -571,7 +571,7 @@ public:
         m_next = roadui::button(footer, this, menu_selector(RoadmapListLayer::onNext),
                                 ">", 307, 20, 28, 22);
         roadui::button(footer, this, menu_selector(RoadmapListLayer::onRefresh),
-                       "REFRESH", 402, 20, 82, 22);
+                       "ACTUALISER", 402, 20, 82, 22);
         m_progress = roadui::label(m_window, "", 70, 20, 100, .28f, roadui::muted);
         m_pageLabel = roadui::label(m_window, "", width / 2, 20, 116, .27f);
         setKeypadEnabled(true);
@@ -615,7 +615,7 @@ public:
         if (!m_inFlight || (key && m_requestKey != key)) return;
         const bool stale = m_requestGeneration != m_generation;
         stopRequest();
-        m_networkMessage = "Level info could not be loaded. Use Refresh to retry.";
+        m_networkMessage = "Echec du chargement. Actualise pour reessayer.";
         render();
         if (stale && m_tab == 0) loadPage();
     }
@@ -649,7 +649,7 @@ class $modify(RoadmapSearch, LevelSearchLayer) {
             circle->setScale(.8f);
             image = circle;
         } else {
-            image = CCLabelBMFont::create("ROAD", "bigFont.fnt");
+            image = CCLabelBMFont::create("PARCOURS", "bigFont.fnt");
             image->setScale(.35f);
         }
         auto button = CCMenuItemSpriteExtra::create(image, this,

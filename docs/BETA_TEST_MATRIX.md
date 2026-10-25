@@ -1,4 +1,6 @@
-# Validation beta.2
+# Validation beta.3
+
+Beta.3 translates RDoD-owned labels, messages, settings and the packaged README into French. Gameplay terms (startpos, runs, grind, VIEW), level names, save keys and file names remain unchanged. Geometry and callbacks are identical to beta.2.
 
 ## Automated
 
@@ -20,7 +22,7 @@ Not executable in this environment. Do not merge main before these pass.
 - Add notes, favorite, goal, run and preset; restart GD and check persistence.
 - Switch Overview / Runs / Startpos in the detail popup; notes persist and only the selected form is shown.
 - Select, edit and delete runs and markers. Adding a marker makes its level appear in Saved Only.
-- Empty STARTPOS shows NO STARTPOS SAVED and CHOOSE A LEVEL, with pagination hidden.
+- Empty STARTPOS shows AUCUN STARTPOS and CHOISIR UN NIVEAU, with pagination hidden.
 - Export JSON; cancel restore; restore; reject a corrupt file; verify the recovery file.
 - Native progress is read only and the local best never decreases.
 - Check Integrated Demonlist, BetterInfo, Happy Textures and Level Thumbnails.

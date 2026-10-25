@@ -20,7 +20,7 @@ class ToolsPopup final : public Popup {
 
     void onBackup(CCObject*) {
         if (!training::Store::get().writable) {
-            notice("Restore a valid save before making a backup.", true);
+            notice("Restaure une copie valide avant d'exporter.", true);
             return;
         }
         const auto path = Mod::get()->getSaveDir() / "training-backup.json";
@@ -31,12 +31,12 @@ class ToolsPopup final : public Popup {
         stream << backup.dump();
         stream.close();
         if (stream.fail()) {
-            notice("Backup could not be written.", true);
+            notice("Impossible d'enregistrer la sauvegarde.", true);
             return;
         }
-        FLAlertLayer::create("Backup saved",
-            fmt::format("Your training backup was saved to:\n{}", path.string()).c_str(), "OK")->show();
-        notice("Backup saved on this device.");
+        FLAlertLayer::create("Sauvegarde creee",
+            fmt::format("Ta sauvegarde a ete enregistree ici :\n{}", path.string()).c_str(), "OK")->show();
+        notice("Sauvegarde creee sur cet appareil.");
     }
 
     bool knownId(int id) const {
@@ -48,29 +48,29 @@ class ToolsPopup final : public Popup {
         std::error_code error;
         const auto size = std::filesystem::file_size(path, error);
         if (error || size > 2000000) {
-            notice("Backup is missing or too large.", true);
+            notice("Sauvegarde absente ou trop volumineuse.", true);
             return;
         }
         std::ifstream stream(path, std::ios::binary);
         if (!stream) {
-            notice("Backup could not be opened.", true);
+            notice("Impossible d'ouvrir la sauvegarde.", true);
             return;
         }
         const std::string raw((std::istreambuf_iterator<char>(stream)), {});
         auto json = matjson::parse(raw);
         if (!json || json.unwrap()["schema"].asInt().unwrapOr(0) != 1) {
-            notice("Backup has an unsupported format.", true);
+            notice("Format de sauvegarde non pris en charge.", true);
             return;
         }
         training::Store candidate;
         if (!candidate.decode(json.unwrap()["payload"].asString().unwrapOr("")) ||
             (candidate.goal && !knownId(candidate.goal))) {
-            notice("Invalid backup. Your data was kept.", true);
+            notice("Sauvegarde invalide. Donnees conservees.", true);
             return;
         }
         for (auto const& [id, value] : candidate.levels) {
             if (!knownId(id)) {
-                notice("Backup contains a level outside this roadmap.", true);
+                notice("La sauvegarde contient un niveau hors du parcours.", true);
                 return;
             }
         }
@@ -82,22 +82,22 @@ class ToolsPopup final : public Popup {
         before << previous;
         before.close();
         if (before.fail()) {
-            notice("Could not preserve the current save. Import cancelled.", true);
+            notice("Copie de secours impossible. Import annule.", true);
             return;
         }
         for (auto const& [id, value] : current.levels)
             candidate.levels[id].best = std::max(candidate.levels[id].best, value.best);
         current = std::move(candidate);
         current.save();
-        notice("Backup restored. Previous data was kept in a recovery file.");
+        notice("Sauvegarde restauree. Anciennes donnees conservees.");
     }
 
     void onRestore(CCObject*) {
         Ref<ToolsPopup> self(this);
-        createQuickPopup("Restore training backup?",
-            "Replace notes, runs, favorites and startpos with your local backup? "
-            "Your current data will be kept in a recovery file. Normal bests will not decrease.",
-            "Cancel", "Restore", [self](FLAlertLayer*, bool confirmed) {
+        createQuickPopup("Restaurer la sauvegarde ?",
+            "Remplacer tes notes, runs, favoris et startpos par la sauvegarde locale ? "
+            "Tes donnees actuelles seront conservees dans une copie de secours. Tes records ne diminueront pas.",
+            "Annuler", "Restaurer", [self](FLAlertLayer*, bool confirmed) {
                 if (confirmed) self->restore();
             });
     }
@@ -120,18 +120,18 @@ class ToolsPopup final : public Popup {
         auto frame = panel(m_mainLayer, 0, 0, 316, 242);
         frame->setZOrder(-1);
         rect(frame, 1, 208, 314, 33, inset);
-        label(m_mainLayer, "TOOLS", 158, 225, 220, .46f);
+        label(m_mainLayer, "OUTILS", 158, 225, 220, .46f);
         button(m_buttonMenu, this, menu_selector(ToolsPopup::onClose),
                "X", 299, 225, 22, 22);
-        label(m_mainLayer, "Training data stays on this device.",
+        label(m_mainLayer, "Tes donnees restent sur cet appareil.",
               158, 191, 284, .28f, muted);
         button(m_buttonMenu, this, menu_selector(ToolsPopup::onBackup),
-               "EXPORT BACKUP", 158, 157, 264, 28, true);
+               "EXPORTER LA SAUVEGARDE", 158, 157, 264, 28, true);
         button(m_buttonMenu, this, menu_selector(ToolsPopup::onRestore),
-               "RESTORE BACKUP", 158, 119, 264, 28);
+               "RESTAURER LA SAUVEGARDE", 158, 119, 264, 28);
         button(m_buttonMenu, this, menu_selector(ToolsPopup::onSettings),
-               "MOD SETTINGS", 158, 81, 264, 28);
-        m_notice = label(m_mainLayer, "Backups use training-backup.json in the mod save folder.",
+               "PARAMETRES DU MOD", 158, 81, 264, 28);
+        m_notice = label(m_mainLayer, "Fichier : training-backup.json dans le dossier du mod.",
                          158, 34, 280, .25f, muted);
         fitPopup(m_mainLayer, 316, 242);
         return true;

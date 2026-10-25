@@ -54,7 +54,7 @@ class Detail final : public Popup {
 
     bool canWrite() {
         if (Store::get().writable) return true;
-        notice("Save is unreadable. Restore a valid backup in Tools.", true);
+        notice("Sauvegarde illisible : restaure une copie via Outils.", true);
         return false;
     }
 
@@ -74,7 +74,7 @@ class Detail final : public Popup {
             progress().notes = value;
             Store::get().save();
         }
-        if (feedback) notice("Notes saved locally.");
+        if (feedback) notice("Notes enregistrees.");
     }
 
     void onSaveNotes(CCObject*) { saveNotes(true); }
@@ -122,32 +122,32 @@ class Detail final : public Popup {
     void buildOverview() {
         auto& p = progress();
         auto best = roadui::panel(m_body, 16, 143, 112, 63, roadui::inset);
-        roadui::label(best, "NORMAL BEST", 56, 48, 100, .25f, roadui::muted);
+        roadui::label(best, "RECORD NORMAL", 56, 48, 100, .25f, roadui::muted);
         roadui::label(best, fmt::format("{}%", p.best), 56, 22, 100, .72f, roadui::green);
 
         auto options = roadui::menu(m_body);
         static constexpr char const* statuses[] = {
-            "NOT STARTED", "LEARNING", "GRINDING", "PAUSED"
+            "NON COMMENCE", "APPRENTISSAGE", "GRIND", "EN PAUSE"
         };
         roadui::button(options, this, menu_selector(Detail::onStatus),
-                       p.best == 100 ? "COMPLETED" : statuses[p.status],
+                       p.best == 100 ? "TERMINE" : statuses[p.status],
                        203, 190, 130, 26);
         roadui::button(options, this, menu_selector(Detail::onFavorite),
-                       p.favorite ? "FAVORITED" : "FAVORITE",
+                       p.favorite ? "EN FAVORIS" : "FAVORI",
                        338, 190, 130, 26, p.favorite);
         roadui::button(options, this, menu_selector(Detail::onGoal),
-                       Store::get().goal == m_id ? "CURRENT GOAL" : "SET GOAL",
+                       Store::get().goal == m_id ? "OBJECTIF ACTUEL" : "CHOISIR OBJECTIF",
                        203, 157, 130, 26, Store::get().goal == m_id);
         roadui::label(m_body, fmt::format("{} runs / {} startpos", p.runs.size(), p.presets.size()),
                       338, 157, 130, .26f, roadui::muted);
 
-        roadui::label(m_body, "PERSONAL NOTES", 16, 126, 240, .29f, roadui::muted, true);
-        m_notes = roadui::input(m_body, 210, 103, 388, "Add a timing, transition or practice reminder...");
+        roadui::label(m_body, "NOTES PERSONNELLES", 16, 126, 240, .29f, roadui::muted, true);
+        m_notes = roadui::input(m_body, 210, 103, 388, "Note un timing, une transition ou un conseil...");
         m_notes->setMaxCharCount(4096);
         m_notes->setString(p.notes);
         roadui::button(options, this, menu_selector(Detail::onSaveNotes),
-                       "SAVE NOTES", 80, 66, 128, 26, true);
-        roadui::label(m_body, "Normal best is read from Geometry Dash.",
+                       "ENREGISTRER", 80, 66, 128, 26, true);
+        roadui::label(m_body, "Record lu dans Geometry Dash.",
                       279, 66, 242, .25f, roadui::muted);
     }
 
@@ -166,7 +166,7 @@ class Detail final : public Popup {
         double from, to;
         if (!number(m_from, from) || !number(m_to, to) ||
             from < 0 || from >= to || to > 100) {
-            notice("Use 0 <= From < To <= 100.", true);
+            notice("Utilise 0 <= Debut < Fin <= 100.", true);
             return;
         }
         auto& runs = progress().runs;
@@ -174,7 +174,7 @@ class Detail final : public Popup {
             runs[m_selectedRun] = {from, to};
         } else {
             if (runs.size() >= 1000) {
-                notice("Run limit reached.", true);
+                notice("Limite de runs atteinte.", true);
                 return;
             }
             runs.emplace_back(from, to);
@@ -182,7 +182,7 @@ class Detail final : public Popup {
         Store::get().save();
         m_selectedRun = -1;
         buildPage();
-        notice("Run saved.");
+        notice("Run enregistre.");
     }
 
     void onDeleteRun(CCObject*) {
@@ -193,14 +193,14 @@ class Detail final : public Popup {
         m_selectedRun = -1;
         Store::get().save();
         buildPage();
-        notice("Run deleted.");
+        notice("Run supprime.");
     }
 
     void buildRuns() {
         auto& runs = progress().runs;
         const bool editing = m_selectedRun >= 0 && static_cast<size_t>(m_selectedRun) < runs.size();
-        roadui::label(m_body, "FROM %", 62, 198, 90, .26f, roadui::muted);
-        roadui::label(m_body, "TO %", 166, 198, 90, .26f, roadui::muted);
+        roadui::label(m_body, "DEBUT %", 62, 198, 90, .26f, roadui::muted);
+        roadui::label(m_body, "FIN %", 166, 198, 90, .26f, roadui::muted);
         m_from = roadui::input(m_body, 62, 175, 92, "0", CommonFilter::Float);
         m_to = roadui::input(m_body, 166, 175, 92, "100", CommonFilter::Float);
         m_from->setMaxCharCount(6);
@@ -211,19 +211,19 @@ class Detail final : public Popup {
         }
         auto actions = roadui::menu(m_body);
         roadui::button(actions, this, menu_selector(Detail::onSaveRun),
-                       editing ? "SAVE RUN" : "ADD RUN", 316, 175, 176, 24, true);
-        roadui::label(m_body, fmt::format("SAVED RUNS ({})", runs.size()),
+                       editing ? "ENREGISTRER" : "AJOUTER UN RUN", 316, 175, 176, 24, true);
+        roadui::label(m_body, fmt::format("RUNS ENREGISTRES ({})", runs.size()),
                       16, 144, 220, .27f, roadui::muted, true);
         roadui::button(actions, this, menu_selector(Detail::onClearRun),
-                       "NEW", 290, 143, 64, 20);
+                       "NOUVEAU", 290, 143, 64, 20);
         auto remove = roadui::button(actions, this, menu_selector(Detail::onDeleteRun),
-                                    "DELETE", 368, 143, 72, 20);
+                                    "SUPPRIMER", 368, 143, 72, 20);
         remove->setEnabled(editing);
         remove->setOpacity(editing ? 255 : 95);
 
         auto list = recordList(51, 77, runs.size());
         if (runs.empty()) {
-            roadui::label(list->m_contentLayer, "Your saved runs will appear here.",
+            roadui::label(list->m_contentLayer, "Tes runs enregistres apparaitront ici.",
                           194, 38, 360, .3f, roadui::muted);
         }
         auto rows = roadui::menu(list->m_contentLayer);
@@ -254,7 +254,7 @@ class Detail final : public Popup {
         std::string name = m_name->getString();
         if (name.empty() || name.find_first_not_of(" \t\r\n") == std::string::npos ||
             !number(m_from, percent) || percent < 0 || percent >= 100) {
-            notice("Enter a name and a start percentage below 100.", true);
+            notice("Indique un nom et un depart inferieur a 100 %.", true);
             return;
         }
         auto& presets = progress().presets;
@@ -262,7 +262,7 @@ class Detail final : public Popup {
             presets[m_selectedPreset] = {name, percent};
         } else {
             if (presets.size() >= 1000) {
-                notice("Startpos limit reached.", true);
+                notice("Limite de startpos atteinte.", true);
                 return;
             }
             presets.push_back({name, percent});
@@ -270,7 +270,7 @@ class Detail final : public Popup {
         Store::get().save();
         m_selectedPreset = -1;
         buildPage();
-        notice("Startpos marker saved.");
+        notice("Startpos enregistre.");
     }
 
     void onDeletePreset(CCObject*) {
@@ -281,15 +281,15 @@ class Detail final : public Popup {
         m_selectedPreset = -1;
         Store::get().save();
         buildPage();
-        notice("Startpos marker deleted.");
+        notice("Startpos supprime.");
     }
 
     void buildStartpos() {
         auto& presets = progress().presets;
         const bool editing = m_selectedPreset >= 0 && static_cast<size_t>(m_selectedPreset) < presets.size();
-        roadui::label(m_body, "PRESET NAME", 16, 198, 230, .26f, roadui::muted, true);
-        roadui::label(m_body, "START %", 356, 198, 96, .26f, roadui::muted);
-        m_name = roadui::input(m_body, 154, 175, 276, "Ending practice");
+        roadui::label(m_body, "NOM DU STARTPOS", 16, 198, 230, .26f, roadui::muted, true);
+        roadui::label(m_body, "DEPART %", 356, 198, 96, .26f, roadui::muted);
+        m_name = roadui::input(m_body, 154, 175, 276, "Entrainement de la fin");
         m_from = roadui::input(m_body, 356, 175, 96, "72.8", CommonFilter::Float);
         m_name->setMaxCharCount(80);
         m_from->setMaxCharCount(6);
@@ -299,17 +299,17 @@ class Detail final : public Popup {
         }
         auto actions = roadui::menu(m_body);
         roadui::button(actions, this, menu_selector(Detail::onNewPreset),
-                       "NEW", 52, 143, 72, 22);
+                       "NOUVEAU", 52, 143, 72, 22);
         auto remove = roadui::button(actions, this, menu_selector(Detail::onDeletePreset),
-                                    "DELETE", 138, 143, 84, 22);
+                                    "SUPPRIMER", 138, 143, 84, 22);
         remove->setEnabled(editing);
         remove->setOpacity(editing ? 255 : 95);
         roadui::button(actions, this, menu_selector(Detail::onSavePreset),
-                       editing ? "SAVE CHANGES" : "ADD MARKER", 303, 143, 202, 22, true);
+                       editing ? "ENREGISTRER" : "AJOUTER UN STARTPOS", 303, 143, 202, 22, true);
 
         auto list = recordList(57, 71, presets.size());
         if (presets.empty()) {
-            roadui::label(list->m_contentLayer, "No startpos saved for this level.",
+            roadui::label(list->m_contentLayer, "Aucun startpos enregistre pour ce niveau.",
                           194, 35, 360, .3f, roadui::muted);
         }
         auto rows = roadui::menu(list->m_contentLayer);
@@ -322,17 +322,17 @@ class Detail final : public Popup {
             row->setTag(static_cast<int>(i));
         }
         list->scrollToTop();
-        roadui::label(m_body, "Markers only - launching from a startpos is not available yet.",
+        roadui::label(m_body, "Reperes uniquement : lancement par startpos indisponible.",
                       210, 43, 388, .23f, roadui::muted);
     }
 
     void buildPage() {
         m_notes = m_name = m_from = m_to = nullptr;
         m_body->removeAllChildrenWithCleanup(true);
-        static constexpr char const* names[] = {"OVERVIEW", "RUNS", "STARTPOS"};
+        static constexpr char const* names[] = {"APERCU", "RUNS", "STARTPOS"};
         for (int i = 0; i < 3; ++i)
             roadui::updateButton(m_tabs[i], names[i], i == m_tab);
-        notice(Store::get().writable ? "Saved on this device." : "Read-only: restore a valid backup in Tools.",
+        notice(Store::get().writable ? "Enregistre sur cet appareil." : "Lecture seule : restaure une copie via Outils.",
                !Store::get().writable);
         if (m_tab == 0) buildOverview();
         else if (m_tab == 1) buildRuns();
@@ -358,10 +358,10 @@ class Detail final : public Popup {
         frame->setZOrder(-1);
         roadui::rect(frame, 1, 242, 418, 37, roadui::inset);
         roadui::label(m_mainLayer, name, 210, 265, 330, .52f);
-        roadui::label(m_mainLayer, fmt::format("LEVEL {}", id), 210, 247, 300, .23f, roadui::muted);
+        roadui::label(m_mainLayer, fmt::format("NIVEAU {}", id), 210, 247, 300, .23f, roadui::muted);
         roadui::button(m_buttonMenu, this, menu_selector(Detail::onClose), "X",
                        402, 263, 22, 22);
-        static constexpr char const* names[] = {"OVERVIEW", "RUNS", "STARTPOS"};
+        static constexpr char const* names[] = {"APERCU", "RUNS", "STARTPOS"};
         for (int i = 0; i < 3; ++i) {
             m_tabs[i] = roadui::button(m_buttonMenu, this, menu_selector(Detail::onTab),
                                       names[i], 85.f + 125.f * i, 226, 112, 23, i == m_tab);
