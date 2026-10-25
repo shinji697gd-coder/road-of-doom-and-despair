@@ -659,10 +659,10 @@ class $modify(RoadmapSearch, LevelSearchLayer) {
             menu->addChild(button);
             menu->updateLayout();
         } else {
-            auto menu = roadui::menu(this);
+            auto fallbackMenu = roadui::menu(this);
             const auto screen = CCDirector::get()->getWinSize();
             button->setPosition({screen.width - 28.f, screen.height * .35f});
-            menu->addChild(button);
+            fallbackMenu->addChild(button);
         }
         return true;
     }
