@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.4",
+  "version": "v0.5.5",
   "developer": "Gayan",
-  "description": "Roadmap de 75 niveaux : Shardscapes remplace Blade of Justice, interface et fonctionnement conserves.",
+  "description": "Roadmap de 75 niveaux, Shardscapes place entre Congregation et Bloodlust.",
   "tags": [
     "interface",
     "utility"
