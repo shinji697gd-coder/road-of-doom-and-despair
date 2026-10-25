@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.5",
+  "version": "v0.5.6",
   "developer": "Gayan",
-  "description": "Roadmap de 75 niveaux, Shardscapes place entre Congregation et Bloodlust.",
+  "description": "Roadmap de 75 niveaux. Nouvelle icone : vraie capture du gameplay de Nullscapes.",
   "tags": [
     "interface",
     "utility"
