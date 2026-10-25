@@ -117,7 +117,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         if (index >= m_roadmap.size()) return;
         m_completed[index] = !m_completed[index];
         Mod::get()->setSavedValue(
-            "completed-" + m_roadmap[index].id, m_completed[index]);
+            "completed-" + m_roadmap[index].id, static_cast<bool>(m_completed[index]));
         updateProgressLabel();
         if (m_filter != 0) {
             rebuildResults();
