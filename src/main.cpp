@@ -51,6 +51,8 @@ namespace {
 class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     std::vector<Entry> m_roadmap;
     std::vector<size_t> m_results;
+    std::vector<bool> m_completed;
+    unsigned m_filter = 0; // 0: all, 1: remaining, 2: completed
     GJListLayer* m_list = nullptr;
     ScrollLayer* m_scroll = nullptr;
     LoadingCircle* m_loading = nullptr;
@@ -58,6 +60,8 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     TextInput* m_searchBox = nullptr;
     CCLabelBMFont* m_countLabel = nullptr;
     CCLabelBMFont* m_pageLabel = nullptr;
+    CCLabelBMFont* m_progressLabel = nullptr;
+    CCLabelBMFont* m_filterLabel = nullptr;
     CCMenuItemSpriteExtra* m_leftButton = nullptr;
     CCMenuItemSpriteExtra* m_rightButton = nullptr;
     CCMenuItemSpriteExtra* m_firstButton = nullptr;
@@ -76,6 +80,68 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         item->setID(name);
         menu->addChild(item);
         return item;
+    }
+
+    void updateProgressLabel() {
+        if (!m_progressLabel) return;
+        const auto done = std::count(m_completed.begin(), m_completed.end(), true);
+        m_progressLabel->setString(
+            fmt::format("PROGRESS: {}/{}", done, m_roadmap.size()).c_str());
+    }
+
+    void rebuildResults() {
+        m_results.clear();
+        for (size_t i = 0; i < m_roadmap.size(); ++i) {
+            if (m_filter == 1 && m_completed[i]) continue;
+            if (m_filter == 2 && !m_completed[i]) continue;
+            if (lower(m_roadmap[i].name).find(m_query) != std::string::npos ||
+                m_roadmap[i].id.find(m_query) != std::string::npos)
+                m_results.push_back(i);
+        }
+        m_page = 0;
+    }
+
+    void onFilter(CCObject*) {
+        m_filter = (m_filter + 1) % 3;
+        static constexpr const char* labels[] = {
+            "FILTER: ALL", "FILTER: TO DO", "FILTER: DONE"
+        };
+        m_filterLabel->setString(labels[m_filter]);
+        rebuildResults();
+        loadPage();
+    }
+
+    void onToggleCompleted(CCObject* sender) {
+        auto item = static_cast<CCMenuItemSpriteExtra*>(sender);
+        const auto index = static_cast<size_t>(item->getTag());
+        if (index >= m_roadmap.size()) return;
+        m_completed[index] = !m_completed[index];
+        Mod::get()->setSavedValue(
+            "completed-" + m_roadmap[index].id, m_completed[index]);
+        updateProgressLabel();
+        if (m_filter != 0) {
+            rebuildResults();
+            loadPage();
+        } else if (auto label =
+                       static_cast<CCLabelBMFont*>(item->getNormalImage())) {
+            label->setString(m_completed[index] ? "DONE" : "MARK");
+        }
+    }
+
+    void addProgressButton(CCNode* row, size_t index) {
+        auto menu = CCMenu::create();
+        menu->setPosition({0.f, 0.f});
+        menu->setID("progress-menu"_spr);
+        auto label = CCLabelBMFont::create(
+            m_completed[index] ? "DONE" : "MARK", "goldFont.fnt");
+        label->setScale(.52f);
+        auto button = CCMenuItemSpriteExtra::create(
+            label, this, menu_selector(RoadmapListLayer::onToggleCompleted));
+        button->setTag(static_cast<int>(index));
+        button->setPosition({310.f, 76.f});
+        button->setID("progress-toggle"_spr);
+        menu->addChild(button);
+        row->addChild(menu, 20);
     }
 
     void updatePageControls() {
@@ -112,13 +178,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     void onSearch(CCObject*) {
         std::string query = lower(m_searchBox->getString());
         m_query = query;
-        m_results.clear();
-        for (size_t i = 0; i < m_roadmap.size(); ++i) {
-            if (lower(m_roadmap[i].name).find(query) != std::string::npos ||
-                m_roadmap[i].id.find(query) != std::string::npos)
-                m_results.push_back(i);
-        }
-        m_page = 0;
+        rebuildResults();
         loadPage();
     }
     void onRefresh(CCObject*) { loadPage(); }
@@ -168,7 +228,10 @@ public:
         if (!CCLayer::init()) return false;
         setID("RoadmapListLayer"_spr);
         m_roadmap = getRoadmap();
-        for (size_t i = 0; i < m_roadmap.size(); ++i) m_results.push_back(i);
+        for (const auto& entry : m_roadmap)
+            m_completed.push_back(
+                Mod::get()->getSavedValue<bool>("completed-" + entry.id, false));
+        rebuildResults();
 
         auto screen = CCDirector::get()->getWinSize();
         auto background = CCSprite::create("GJ_gradientBG.png");
@@ -249,6 +312,21 @@ public:
         m_countLabel->setScale(.6f);
         m_countLabel->setID("count"_spr);
         addChild(m_countLabel);
+
+        m_progressLabel = CCLabelBMFont::create("", "goldFont.fnt");
+        m_progressLabel->setPosition({screen.width / 2.f, screen.height - 14.f});
+        m_progressLabel->setScale(.55f);
+        m_progressLabel->setID("progress-count"_spr);
+        addChild(m_progressLabel, 5);
+        updateProgressLabel();
+
+        m_filterLabel = CCLabelBMFont::create("FILTER: ALL", "goldFont.fnt");
+        m_filterLabel->setScale(.62f);
+        auto filterButton = CCMenuItemSpriteExtra::create(
+            m_filterLabel, this, menu_selector(RoadmapListLayer::onFilter));
+        filterButton->setPosition({screen.width / 2.f, 20.f});
+        filterButton->setID("progress-filter"_spr);
+        controls->addChild(filterButton);
 
         auto pageSprite = CCSprite::create("GJ_button_02.png");
         pageSprite->setScale(.7f);
@@ -344,6 +422,7 @@ public:
                 cell->updateBGColor(static_cast<int>(row));
                 cell->setID(fmt::format("level-{}"_spr,wanted.id));
                 m_scroll->m_contentLayer->addChild(cell,1);
+                addProgressButton(cell, m_results[i]);
                 actual++;
                 continue;
             }
@@ -370,6 +449,7 @@ public:
             idLabel->setPosition({19.f,24.f});
             idLabel->limitLabelWidth(335.f,.38f,.2f);
             bg->addChild(idLabel);
+            addProgressButton(bg, m_results[i]);
         }
 
         if (!count) {
