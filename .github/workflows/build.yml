@@ -10,6 +10,28 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Get real Nullscapes gameplay screenshot
+        shell: pwsh
+        run: |
+          $sources = @(
+            'https://static.wikia.nocookie.net/geometry-dash-fan/images/8/8a/Nullscapes.png/revision/latest/scale-to-width-down/1200?cb=20240906150718',
+            'https://static.wikia.nocookie.net/geometry-dash-fan/images/8/8a/Nullscapes.png'
+          )
+          $ok = $false
+          foreach ($url in $sources) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile "logo.png" -Headers @{'User-Agent' = 'Mozilla/5.0 (compatible; RoadOfDoom/0.5.6)'} -ErrorAction Stop
+              [byte[]]$data = [IO.File]::ReadAllBytes((Join-Path $PWD 'logo.png'))
+              $isPng = $data.Length -gt 1000 -and $data[0] -eq 137 -and $data[1] -eq 80 -and $data[2] -eq 78 -and $data[3] -eq 71
+              if (-not $isPng) { throw "Invalid downloaded PNG (size: $($data.Length))" }
+              Write-Host "Real Nullscapes image ready ($($data.Length) bytes)."
+              $ok = $true
+              break
+            } catch {
+              Write-Warning "Could not fetch screenshot from $url : $_"
+            }
+          }
+          if (-not $ok) { throw 'Could not get Nullscapes screenshot; build halted to avoid shipping an unrelated/generated icon.' }
       - uses: geode-sdk/build-geode-mod@main
         id: build
         with:
