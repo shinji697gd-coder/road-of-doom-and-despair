@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.2",
+  "version": "v0.5.3",
   "developer": "Gayan",
-  "description": "75 niveaux, fiches natives et lignes de secours visibles meme si serveur indisponible.",
+  "description": "Roadmap de 75 niveaux : corrections de l'alignement des boutons VIEW et des noms de créateurs.",
   "tags": [
     "interface",
     "utility"
