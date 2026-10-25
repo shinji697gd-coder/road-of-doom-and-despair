@@ -124,7 +124,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     void onRefresh(CCObject*) { loadPage(); }
 
     void showEmptyPage() {
-        loadLevelsFinished(CCArray::create(), "", 0);
+        renderRows(nullptr,true);
     }
 
     void loadPage() {
@@ -132,8 +132,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             old->removeFromParent();
         updatePageControls();
         if (m_results.empty()) { showEmptyPage(); return; }
-        m_loading->setVisible(true);
-        if (m_scroll) m_scroll->setVisible(false);
+        renderRows(nullptr,false);
 
         // Type19 requests a comma-separated list of *real* level IDs.
         // The game downloads level information, creator, song, difficulty,
@@ -274,77 +273,111 @@ public:
         return true;
     }
 
-    void loadLevelsFinished(CCArray* levels,const char*,int) override {
-        // The crash report showed CustomListView dispatching to AchievementCell
-        // with a GJGameLevel, causing a null CCString dereference. Build normal
-        // LevelCell objects directly instead of using CustomListView::create.
+    // Render all requested roadmap entries, even when the GD server does
+    // not provide a level. This way the list is never an empty black panel.
+    // Use explicitly-positioned LevelCells rather than a ColumnLayout, since
+    // GenericContentLayer's visibility culling otherwise hides the rows.
+    void renderRows(CCArray* levels, bool finished) {
         if (m_scroll) {
             m_scroll->removeFromParentAndCleanup(true);
             m_scroll = nullptr;
         }
 
-        auto manager = GameLevelManager::get();
-        if (manager->m_levelManagerDelegate == this)
-            manager->m_levelManagerDelegate = nullptr;
+        constexpr float viewHeight = 190.f;
+        constexpr float rowHeight = 90.f;
+        constexpr float viewWidth = 356.f;
+        const size_t begin = m_page * kPageSize;
+        const size_t end = std::min(m_results.size(), begin+kPageSize);
+        const size_t count = end - begin;
+        const float contentHeight = std::max(viewHeight, count*rowHeight);
 
-        m_scroll = ScrollLayer::create({356.f,190.f});
-        m_scroll->setID("level-scroll"_spr);
+        m_scroll = ScrollLayer::create({viewWidth,viewHeight});
+        m_scroll->setID("roadmap-scroll"_spr);
         m_scroll->setPosition({0.f,0.f});
+        m_scroll->m_contentLayer->setContentSize({viewWidth,contentHeight});
         m_list->addChild(m_scroll,6);
-        m_scroll->m_contentLayer->setLayout(
-            ColumnLayout::create()
-                ->setGap(0.f)
-                ->setAxisReverse(true)
-                ->setAxisAlignment(AxisAlignment::End)
-                ->setAutoGrowAxis(190.f)
-        );
+        size_t actual = 0;
 
-        size_t shown = 0;
-        if (levels && !m_results.empty()) {
-            const auto start = m_page * kPageSize;
-            const auto end = std::min(m_results.size(), start+kPageSize);
-            // The server can return levels in a different order from requested
-            // IDs. Keep the roadmap ordering regardless of response order.
-            for (size_t i = start; i < end; ++i) {
-                auto const& record = m_roadmap[m_results[i]];
-                GJGameLevel* level = nullptr;
-                for (auto entry : CCArrayExt<CCObject*>(levels)) {
-                    if (auto candidate = typeinfo_cast<GJGameLevel*>(entry)) {
-                        if (fmt::to_string(static_cast<int>(candidate->m_levelID)) == record.id) {
-                            level = candidate;
-                            break;
-                        }
+        for(size_t i=begin;i<end;i++) {
+            const auto& wanted=m_roadmap[m_results[i]];
+            const size_t row=i-begin;
+            const float y=contentHeight - rowHeight*(row+1);
+
+            GJGameLevel* level=nullptr;
+            if (levels) {
+                // The result array from getOnlineLevels contains GJGameLevel
+                // objects. A dynamic typeinfo_cast could fail for GD's
+                // non-RTTI classes and filter every result away.
+                for (auto candidate : CCArrayExt<GJGameLevel*>(levels)) {
+                    if(candidate && fmt::to_string(static_cast<int>(candidate->m_levelID)) == wanted.id) {
+                        level=candidate;
+                        break;
                     }
                 }
-                if (!level) {
-                    log::warn("Level {} (ID {}) not returned by GD server",record.name,record.id);
-                    continue;
-                }
-                auto cell = LevelCell::create(356.f,90.f);
-                if (!cell) continue;
-                cell->loadFromLevel(level);
-                cell->updateBGColor(static_cast<int>(shown));
-                cell->setID(fmt::format("level-{}"_spr,record.id));
-                m_scroll->m_contentLayer->addChild(cell);
-                ++shown;
             }
+            if (level) {
+                auto cell=LevelCell::create(viewWidth,rowHeight);
+                if (!cell) continue;
+                cell->setPosition({0.f,y});
+                cell->loadFromLevel(level);
+                cell->updateBGColor(static_cast<int>(row));
+                cell->setID(fmt::format("level-{}"_spr,wanted.id));
+                m_scroll->m_contentLayer->addChild(cell,1);
+                actual++;
+                continue;
+            }
+
+            // The row remains visible during loading or if an ID was not
+            // returned by the Geometry Dash servers, and can be retried.
+            auto bg=CCLayerColor::create(row%2==0?
+                  ccColor4B{161,88,44,255}:ccColor4B{194,114,62,255},
+                  viewWidth,rowHeight);
+            bg->setPosition({0.f,y});
+            bg->setID(fmt::format("placeholder-{}"_spr,wanted.id));
+            m_scroll->m_contentLayer->addChild(bg);
+            auto label=CCLabelBMFont::create(wanted.name.c_str(),"bigFont.fnt");
+            label->setAnchorPoint({0.f,.5f});
+            label->setScale(.57f);
+            label->setPosition({19.f,58.f});
+            label->limitLabelWidth(330.f,.57f,.25f);
+            bg->addChild(label);
+            auto idLabel=CCLabelBMFont::create(
+                fmt::format("ID {}  |  {}",wanted.id,finished?"LEVEL NOT RECEIVED":"LOADING...").c_str(),
+                "goldFont.fnt");
+            idLabel->setAnchorPoint({0.f,.5f});
+            idLabel->setScale(.38f);
+            idLabel->setPosition({19.f,24.f});
+            idLabel->limitLabelWidth(335.f,.38f,.2f);
+            bg->addChild(idLabel);
         }
-        if (shown == 0) {
-            auto text = CCLabelBMFont::create("NO LEVELS FOUND", "bigFont.fnt");
-            text->setScale(.48f);
-            text->setContentSize({356.f,190.f});
-            text->setID("empty-message"_spr);
-            m_scroll->m_contentLayer->addChild(text);
+
+        if (!count) {
+            auto empty=CCLabelBMFont::create("NO LEVELS FOUND","bigFont.fnt");
+            empty->setScale(.5f);
+            empty->setPosition({178.f,95.f});
+            m_scroll->m_contentLayer->addChild(empty);
         }
-        m_scroll->m_contentLayer->updateLayout();
-        m_loading->setVisible(false);
+        m_scroll->scrollToTop();
+        m_loading->setVisible(!finished && count>0);
+        log::info("Roadmap page {}: requested={} server-returned={} matched={} finished={}",
+            m_page+1,count,levels?levels->count():0,actual,finished);
         updatePageControls();
     }
 
+    void loadLevelsFinished(CCArray* levels,const char*,int) override {
+        auto manager=GameLevelManager::get();
+        if(manager->m_levelManagerDelegate==this)
+            manager->m_levelManagerDelegate=nullptr;
+        renderRows(levels,true);
+    }
+
     void loadLevelsFailed(const char*,int) override {
-        m_loading->setVisible(false);
-        FLAlertLayer::create("Load failed",
-            "Could not fetch these level IDs. Check your connection and try Refresh.",
+        auto manager=GameLevelManager::get();
+        if(manager->m_levelManagerDelegate==this)
+            manager->m_levelManagerDelegate=nullptr;
+        renderRows(nullptr,true);
+        FLAlertLayer::create("Loading issue",
+            "The level information could not be fetched. The roadmap remains visible; use Refresh to retry.",
             "OK")->show();
     }
 
