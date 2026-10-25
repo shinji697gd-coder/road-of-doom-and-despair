@@ -11,6 +11,7 @@
 #include <Geode/ui/TextInput.hpp>
 #include "level_data.hpp"
 #include "Training.hpp"
+#include <Geode/ui/GeodeUI.hpp>
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -68,6 +69,8 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     CCMenuItemSpriteExtra* m_firstButton = nullptr;
     CCMenuItemSpriteExtra* m_lastButton = nullptr;
     CCMenuItemSpriteExtra* m_pageButton = nullptr;
+    bool m_inFlight=false, m_reloadPending=false;
+    unsigned m_tab=0;
     unsigned m_page = 0;
     std::string m_query;
     static constexpr size_t kPageSize = 10;
@@ -122,24 +125,36 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         if(index<m_roadmap.size()) training::Detail::create(std::stoi(m_roadmap[index].id),m_roadmap[index].name)->show();
     }
     void onDashboard(CCObject*) {
-        auto& s=training::Store::get(); int done=0,favorites=0,runs=0,presets=0;
+        m_tab=2;
+        if(m_scroll){m_scroll->removeFromParentAndCleanup(true);m_scroll=nullptr;}
+        auto& s=training::Store::get();int done=0,favorites=0,runs=0,presets=0;
         std::string goal="None";
         for(auto const& e:m_roadmap){auto& p=s.levels[std::stoi(e.id)];done+=p.best==100;favorites+=p.favorite;runs+=p.runs.size();presets+=p.presets.size();if(std::stoi(e.id)==s.goal)goal=e.name;}
-        FLAlertLayer::create("PROGRESSION",fmt::format("Completed: {}/75 ({}%)\nGoal: {}\nFavorites: {}\nRuns: {} | Startpos markers: {}",done,done*100/75,goal,favorites,runs,presets).c_str(),"OK")->show();
+        m_scroll=ScrollLayer::create({356,190});m_scroll->m_contentLayer->setContentSize({356,190});m_list->addChild(m_scroll,6);
+        auto text=CCLabelBMFont::create(fmt::format("YOUR ROAD\n\nCompleted: {}/75 ({}%)\nGoal: {}\nFavorites: {}\nRuns: {} | Startpos: {}",done,done*100/75,goal,favorites,runs,presets).c_str(),"bigFont.fnt");text->setScale(.45f);text->limitLabelWidth(330,.45f,.2f);text->setPosition({178,110});m_scroll->m_contentLayer->addChild(text);
+        auto bar=CCLayerColor::create({50,40,35,255},320,12);bar->setPosition({18,20});m_scroll->m_contentLayer->addChild(bar);auto fill=CCLayerColor::create({80,200,100,255},320.f*done/75,12);bar->addChild(fill);
+        m_loading->setVisible(false);m_searchMenu->setVisible(false);updatePageControls();
     }
+    void onRoadmap(CCObject*) {m_tab=0;m_filter=0;m_filterLabel->setString("FILTER: ALL");m_searchMenu->setVisible(true);onRefresh(nullptr);}
+    void onSettings(CCObject*) {openSettingsPopup(Mod::get());}
     void onStartpos(CCObject*) {
-        m_filter=5; m_filterLabel->setString("FILTER: STARTPOS");rebuildResults();loadPage();
+        m_tab=1;m_searchMenu->setVisible(true);m_filter=5; m_filterLabel->setString("FILTER: STARTPOS");rebuildResults();loadPage();
     }
     void onBackup(CCObject*) {
-        auto path=Mod::get()->getSaveDir()/"training-backup.txt";
-        std::ofstream f(path,std::ios::binary); f<<training::Store::get().encode(); f.close();
-        FLAlertLayer::create("Backup",f.fail()?"Backup failed.":"Saved training-backup.txt in the mod save directory.","OK")->show();
+        auto path=Mod::get()->getSaveDir()/"training-backup.json";
+        std::ofstream f(path,std::ios::binary); matjson::Value backup;backup["schema"]=1;backup["payload"]=training::Store::get().encode();f<<backup.dump(); f.close();
+        FLAlertLayer::create("Backup",f.fail()?"Backup failed.":"Saved training-backup.json in the mod save directory.","OK")->show();
     }
     void onRestore(CCObject*) {
-        auto path=Mod::get()->getSaveDir()/"training-backup.txt";std::ifstream f(path,std::ios::binary);
+        auto path=Mod::get()->getSaveDir()/"training-backup.json";std::ifstream f(path,std::ios::binary);
+        if(!f || std::filesystem::file_size(path)>2000000){FLAlertLayer::create("Import","Backup missing or too large.","OK")->show();return;}
         std::string raw((std::istreambuf_iterator<char>(f)),{});training::Store candidate;
+        auto json=matjson::parse(raw);
+        if(!json || json.unwrap()["schema"].asInt().unwrapOr(0)!=1){FLAlertLayer::create("Import","Unsupported backup schema.","OK")->show();return;}
+        raw=json.unwrap()["payload"].asString().unwrapOr("");
         if(!candidate.decode(raw)){FLAlertLayer::create("Import","Invalid backup. Nothing changed.","OK")->show();return;}
         for(auto const& [id,p]:candidate.levels){bool found=false;for(auto const& e:m_roadmap)if(std::stoi(e.id)==id)found=true;if(!found)return;}
+        if(candidate.goal!=0){bool found=false;for(auto const& e:m_roadmap)if(std::stoi(e.id)==candidate.goal)found=true;if(!found)return;}
         auto& current=training::Store::get();
         std::ofstream before(Mod::get()->getSaveDir()/"training-before-import.txt");before<<current.encode();before.close();if(before.fail())return;
         for(auto const& [id,p]:current.levels) candidate.levels[id].best=std::max(candidate.levels[id].best,p.best);
@@ -169,7 +184,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         m_countLabel->setString(count.c_str());
         m_countLabel->limitLabelWidth(110.f, .6f, .0f);
         m_pageLabel->setString(fmt::format("{}", m_page + 1).c_str());
-        bool multiple = pages > 1;
+        bool multiple = pages > 1 && m_tab!=2;
         m_leftButton->setVisible(multiple && m_page > 0);
         m_firstButton->setVisible(multiple && m_page > 0);
         m_rightButton->setVisible(multiple && m_page + 1 < pages);
@@ -198,13 +213,15 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         rebuildResults();
         loadPage();
     }
-    void onRefresh(CCObject*) { loadPage(); }
+    void onRefresh(CCObject*) { rebuildResults();updateProgressLabel();loadPage(); }
 
     void showEmptyPage() {
         renderRows(nullptr,true);
     }
 
     void loadPage() {
+        if(m_tab==2){onDashboard(nullptr);return;}
+        if(m_inFlight){m_reloadPending=true;renderRows(nullptr,false);return;}
         if (auto old = m_list->getChildByID("empty-label"_spr))
             old->removeFromParent();
         updatePageControls();
@@ -225,6 +242,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         search->m_searchQuery = ids;
         if(GameLevelManager::get()->m_levelManagerDelegate && GameLevelManager::get()->m_levelManagerDelegate!=this){renderRows(nullptr,true);return;}
         GameLevelManager::get()->m_levelManagerDelegate = this;
+        m_inFlight=true;
         GameLevelManager::get()->getOnlineLevels(search);
     }
 
@@ -248,7 +266,7 @@ public:
         m_roadmap = getRoadmap();
         for (const auto& entry : m_roadmap)
             m_completed.push_back(
-                Mod::get()->getSavedValue<bool>("completed-" + entry.id, false));
+                training::Store::get().levels[std::stoi(entry.id)].best==100);
         rebuildResults();
 
         auto screen = CCDirector::get()->getWinSize();
@@ -366,9 +384,9 @@ public:
         setKeypadEnabled(true);
         setKeyboardEnabled(true);
         auto tabs=CCMenu::create();tabs->setPosition({0,0});addChild(tabs,10);
-        const char* names[]={"ROADMAP","STARTPOS","PROGRESSION","BACKUP","RESTORE"};
-        SEL_MenuHandler actions[]={menu_selector(RoadmapListLayer::onRefresh),menu_selector(RoadmapListLayer::onStartpos),menu_selector(RoadmapListLayer::onDashboard),menu_selector(RoadmapListLayer::onBackup),menu_selector(RoadmapListLayer::onRestore)};
-        for(int i=0;i<5;i++){auto l=CCLabelBMFont::create(names[i],"goldFont.fnt");l->setScale(.35f);auto b=CCMenuItemSpriteExtra::create(l,this,actions[i]);b->setPosition({screen.width/2+(i-2)*85.f,screen.height-35.f});tabs->addChild(b);}
+        const char* names[]={"ROADMAP","STARTPOS","PROGRESSION","BACKUP","RESTORE","SETTINGS"};
+        SEL_MenuHandler actions[]={menu_selector(RoadmapListLayer::onRoadmap),menu_selector(RoadmapListLayer::onStartpos),menu_selector(RoadmapListLayer::onDashboard),menu_selector(RoadmapListLayer::onBackup),menu_selector(RoadmapListLayer::onRestore),menu_selector(RoadmapListLayer::onSettings)};
+        for(int i=0;i<6;i++){auto l=CCLabelBMFont::create(names[i],"goldFont.fnt");l->setScale(.35f);auto b=CCMenuItemSpriteExtra::create(l,this,actions[i]);b->setPosition(i<3?CCPoint{screen.width/2+(i-1)*115.f,40.f}:CCPoint{45.f,115.f-(i-3)*25.f});tabs->addChild(b);}
         loadPage();
         return true;
     }
@@ -378,6 +396,7 @@ public:
     // Use explicitly-positioned LevelCells rather than a ColumnLayout, since
     // GenericContentLayer's visibility culling otherwise hides the rows.
     void renderRows(CCArray* levels, bool finished) {
+        if(m_tab==2)return;
         if (m_scroll) {
             m_scroll->removeFromParentAndCleanup(true);
             m_scroll = nullptr;
@@ -488,7 +507,7 @@ public:
         }
         m_scroll->scrollToTop();
         m_loading->setVisible(!finished && count>0);
-        log::info("Roadmap page {}: requested={} server-returned={} matched={} finished={}",
+        if(Mod::get()->getSettingValue<bool>("diagnostic-logging")) log::info("Roadmap page {}: requested={} server-returned={} matched={} finished={}",
             m_page+1,count,levels?levels->count():0,actual,finished);
         updatePageControls();
     }
@@ -497,6 +516,8 @@ public:
         auto manager=GameLevelManager::get();
         if(manager->m_levelManagerDelegate==this)
             manager->m_levelManagerDelegate=nullptr;
+        m_inFlight=false;
+        if(m_reloadPending){m_reloadPending=false;loadPage();return;}
         renderRows(levels,true);
     }
 
@@ -504,6 +525,8 @@ public:
         auto manager=GameLevelManager::get();
         if(manager->m_levelManagerDelegate==this)
             manager->m_levelManagerDelegate=nullptr;
+        m_inFlight=false;
+        if(m_reloadPending){m_reloadPending=false;loadPage();return;}
         renderRows(nullptr,true);
         FLAlertLayer::create("Loading issue",
             "The level information could not be fetched. The roadmap remains visible; use Refresh to retry.",
@@ -519,6 +542,13 @@ public:
         else CCLayer::keyDown(key,time);
     }
     void keyBackClicked() override {onBack(nullptr);}
+
+    void onExit() override {
+        auto manager=GameLevelManager::get();
+        if(manager->m_levelManagerDelegate==this)manager->m_levelManagerDelegate=nullptr;
+        m_inFlight=false;m_reloadPending=false;
+        CCLayer::onExit();
+    }
 
     ~RoadmapListLayer() override {
         auto manager = GameLevelManager::get();
