@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.1",
+  "version": "v0.5.2",
   "developer": "Gayan",
-  "description": "Roadmap de 75 niveaux affichés en LevelCell natives : correctif du crash de la v0.5.0.",
+  "description": "75 niveaux, fiches natives et lignes de secours visibles meme si serveur indisponible.",
   "tags": [
     "interface",
     "utility"
