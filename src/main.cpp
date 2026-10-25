@@ -318,8 +318,29 @@ public:
             if (level) {
                 auto cell=LevelCell::create(viewWidth,rowHeight);
                 if (!cell) continue;
+                cell->setContentSize({viewWidth,rowHeight});
+                cell->setAnchorPoint({0.f,0.f});
                 cell->setPosition({0.f,y});
                 cell->loadFromLevel(level);
+
+                // Normal Geometry Dash level cells are usually created inside
+                // a CustomListView/TableView. In our ScrollLayer, their menu
+                // keeps an inappropriate offset: the creator name and VIEW
+                // are drawn BELOW the level card, hidden by the next row.
+                // Give the interactive elements explicit LOCAL coordinates.
+                if (auto menu = cell->m_mainMenu) {
+                    menu->setPosition({0.f,0.f});
+                    if (auto creator = menu->getChildByID("creator-name")) {
+                        creator->setAnchorPoint({0.f,.5f});
+                        creator->setPosition({50.f,53.f});
+                    }
+                    if (auto view = menu->getChildByID("view-button")) {
+                        view->setPosition({viewWidth-43.f,rowHeight*.5f});
+                    }
+                    // Level Thumbnails may add start-position buttons here.
+                    // Keeping the native menu attached to each row lets
+                    // these controls scroll with the respective level.
+                }
                 cell->updateBGColor(static_cast<int>(row));
                 cell->setID(fmt::format("level-{}"_spr,wanted.id));
                 m_scroll->m_contentLayer->addChild(cell,1);
