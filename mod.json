@@ -1,0 +1,18 @@
+{
+  "geode": "5.11.2",
+  "gd": {
+    "win": "2.2081"
+  },
+  "id": "gayan.road-of-doom",
+  "name": "Road of Doom and Despair",
+  "version": "v0.4.0",
+  "developer": "Gayan",
+  "description": "Liste personnelle de 75 niveaux, interface en cartes et redirection par ID.",
+  "tags": [
+    "interface",
+    "utility"
+  ],
+  "dependencies": {
+    "geode.node-ids": ">=v1.9.0"
+  }
+}
