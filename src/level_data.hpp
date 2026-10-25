@@ -44,7 +44,6 @@ Evangelion|62151546
 Aftermath|25610878
 Bloodbath|10565740
 Sakupen Hell|23262780
-Shardscapes|79997992
 Infernal Abyss|27379546
 Phobos|19759411
 Auditory Breaker|51791710
@@ -58,6 +57,7 @@ Sonic Wave|26681070
 Wasureta|64658786
 Kowareta|46763581
 Congregation|68668045
+Shardscapes|79997992
 Bloodlust|42584142
 Rust|71912451
 Cosmic Cyclone|76159410
