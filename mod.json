@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.3",
+  "version": "v0.5.4",
   "developer": "Gayan",
-  "description": "Roadmap de 75 niveaux : corrections de l'alignement des boutons VIEW et des noms de créateurs.",
+  "description": "Roadmap de 75 niveaux : Shardscapes remplace Blade of Justice, interface et fonctionnement conserves.",
   "tags": [
     "interface",
     "utility"
