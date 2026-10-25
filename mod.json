@@ -7,12 +7,29 @@
   "name": "Road of Doom and Despair",
   "version": "v1.0.0-beta.1",
   "developer": "Gayan",
-  "description": "Bêta : 75 niveaux, recherche, progression sauvegardée, filtres et boutons VIEW natifs.",
+  "description": "B\u00eata : 75 niveaux, recherche, progression sauvegard\u00e9e, filtres et boutons VIEW natifs.",
   "tags": [
     "interface",
     "utility"
   ],
   "dependencies": {
     "geode.node-ids": ">=v1.9.0"
+  },
+  "settings": {
+    "safe-mode": {
+      "type": "bool",
+      "name": "Safe Mode",
+      "default": true
+    },
+    "auto-sync-progress": {
+      "type": "bool",
+      "name": "Read GD progress",
+      "default": true
+    },
+    "diagnostic-logging": {
+      "type": "bool",
+      "name": "Diagnostic logs",
+      "default": true
+    }
   }
 }

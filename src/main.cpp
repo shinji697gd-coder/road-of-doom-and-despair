@@ -10,6 +10,7 @@
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/TextInput.hpp>
 #include "level_data.hpp"
+#include "Training.hpp"
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -92,6 +93,11 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     void rebuildResults() {
         m_results.clear();
         for (size_t i = 0; i < m_roadmap.size(); ++i) {
+            auto& state=training::Store::get().levels[std::stoi(m_roadmap[i].id)];
+            m_completed[i]=state.best==100;
+            if(m_filter==3 && !state.favorite)continue;
+            if(m_filter==4 && training::Store::get().goal!=std::stoi(m_roadmap[i].id))continue;
+            if(m_filter==5 && state.presets.empty())continue;
             if (m_filter == 1 && m_completed[i]) continue;
             if (m_filter == 2 && !m_completed[i]) continue;
             if (lower(m_roadmap[i].name).find(m_query) != std::string::npos ||
@@ -102,9 +108,9 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     }
 
     void onFilter(CCObject*) {
-        m_filter = (m_filter + 1) % 3;
+        m_filter = (m_filter + 1) % 6;
         static constexpr const char* labels[] = {
-            "FILTER: ALL", "FILTER: TO DO", "FILTER: DONE"
+            "FILTER: ALL", "FILTER: TO DO", "FILTER: DONE", "FILTER: FAVORITES", "FILTER: GOAL", "FILTER: STARTPOS"
         };
         m_filterLabel->setString(labels[m_filter]);
         rebuildResults();
@@ -112,28 +118,39 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     }
 
     void onToggleCompleted(CCObject* sender) {
-        auto item = static_cast<CCMenuItemSpriteExtra*>(sender);
-        const auto index = static_cast<size_t>(item->getTag());
-        if (index >= m_roadmap.size()) return;
-        m_completed[index] = !m_completed[index];
-        Mod::get()->setSavedValue(
-            "completed-" + m_roadmap[index].id, static_cast<bool>(m_completed[index]));
-        updateProgressLabel();
-        if (m_filter != 0) {
-            rebuildResults();
-            loadPage();
-        } else if (auto label =
-                       static_cast<CCLabelBMFont*>(item->getNormalImage())) {
-            label->setString(m_completed[index] ? "DONE" : "MARK");
-        }
+        auto index=static_cast<size_t>(sender->getTag());
+        if(index<m_roadmap.size()) training::Detail::create(std::stoi(m_roadmap[index].id),m_roadmap[index].name)->show();
     }
-
+    void onDashboard(CCObject*) {
+        auto& s=training::Store::get(); int done=0,favorites=0,runs=0,presets=0;
+        std::string goal="None";
+        for(auto const& e:m_roadmap){auto& p=s.levels[std::stoi(e.id)];done+=p.best==100;favorites+=p.favorite;runs+=p.runs.size();presets+=p.presets.size();if(std::stoi(e.id)==s.goal)goal=e.name;}
+        FLAlertLayer::create("PROGRESSION",fmt::format("Completed: {}/75 ({}%)\nGoal: {}\nFavorites: {}\nRuns: {} | Startpos markers: {}",done,done*100/75,goal,favorites,runs,presets).c_str(),"OK")->show();
+    }
+    void onStartpos(CCObject*) {
+        m_filter=5; m_filterLabel->setString("FILTER: STARTPOS");rebuildResults();loadPage();
+    }
+    void onBackup(CCObject*) {
+        auto path=Mod::get()->getSaveDir()/"training-backup.txt";
+        std::ofstream f(path,std::ios::binary); f<<training::Store::get().encode(); f.close();
+        FLAlertLayer::create("Backup",f.fail()?"Backup failed.":"Saved training-backup.txt in the mod save directory.","OK")->show();
+    }
+    void onRestore(CCObject*) {
+        auto path=Mod::get()->getSaveDir()/"training-backup.txt";std::ifstream f(path,std::ios::binary);
+        std::string raw((std::istreambuf_iterator<char>(f)),{});training::Store candidate;
+        if(!candidate.decode(raw)){FLAlertLayer::create("Import","Invalid backup. Nothing changed.","OK")->show();return;}
+        for(auto const& [id,p]:candidate.levels){bool found=false;for(auto const& e:m_roadmap)if(std::stoi(e.id)==id)found=true;if(!found)return;}
+        auto& current=training::Store::get();
+        std::ofstream before(Mod::get()->getSaveDir()/"training-before-import.txt");before<<current.encode();before.close();if(before.fail())return;
+        for(auto const& [id,p]:current.levels) candidate.levels[id].best=std::max(candidate.levels[id].best,p.best);
+        current=std::move(candidate);current.save();onRefresh(nullptr);
+    }
     void addProgressButton(CCNode* row, size_t index) {
         auto menu = CCMenu::create();
         menu->setPosition({0.f, 0.f});
         menu->setID("progress-menu"_spr);
         auto label = CCLabelBMFont::create(
-            m_completed[index] ? "DONE" : "MARK", "goldFont.fnt");
+            "DETAILS", "goldFont.fnt");
         label->setScale(.52f);
         auto button = CCMenuItemSpriteExtra::create(
             label, this, menu_selector(RoadmapListLayer::onToggleCompleted));
@@ -206,6 +223,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             ids += m_roadmap[m_results[i]].id;
         }
         search->m_searchQuery = ids;
+        if(GameLevelManager::get()->m_levelManagerDelegate && GameLevelManager::get()->m_levelManagerDelegate!=this){renderRows(nullptr,true);return;}
         GameLevelManager::get()->m_levelManagerDelegate = this;
         GameLevelManager::get()->getOnlineLevels(search);
     }
@@ -347,6 +365,10 @@ public:
 
         setKeypadEnabled(true);
         setKeyboardEnabled(true);
+        auto tabs=CCMenu::create();tabs->setPosition({0,0});addChild(tabs,10);
+        const char* names[]={"ROADMAP","STARTPOS","PROGRESSION","BACKUP","RESTORE"};
+        SEL_MenuHandler actions[]={menu_selector(RoadmapListLayer::onRefresh),menu_selector(RoadmapListLayer::onStartpos),menu_selector(RoadmapListLayer::onDashboard),menu_selector(RoadmapListLayer::onBackup),menu_selector(RoadmapListLayer::onRestore)};
+        for(int i=0;i<5;i++){auto l=CCLabelBMFont::create(names[i],"goldFont.fnt");l->setScale(.35f);auto b=CCMenuItemSpriteExtra::create(l,this,actions[i]);b->setPosition({screen.width/2+(i-2)*85.f,screen.height-35.f});tabs->addChild(b);}
         loadPage();
         return true;
     }
@@ -394,6 +416,12 @@ public:
                 }
             }
             if (level) {
+                if(Mod::get()->getSettingValue<bool>("auto-sync-progress")) {
+                    auto& p=training::Store::get().levels[std::stoi(wanted.id)];
+                    p.best=std::max(p.best,std::clamp(level->getNormalPercent(),0,100));
+                    m_completed[m_results[i]]=p.best==100;
+                    training::Store::get().save();updateProgressLabel();
+                }
                 auto cell=LevelCell::create(viewWidth,rowHeight);
                 if (!cell) continue;
                 cell->setContentSize({viewWidth,rowHeight});
@@ -526,3 +554,4 @@ class $modify(RoadmapSearch, LevelSearchLayer) {
             CCTransitionFade::create(.5f,RoadmapListLayer::scene()));
     }
 };
+
