@@ -64,55 +64,52 @@ class RoadmapPopup : public geode::Popup {
     }
     void card(size_t idx,float y) {
         auto const& level=all[idx];
-        rect(cards,22.f,y-44.f,376.f,89.f,{57,27,11,255});
-        rect(cards,25.f,y-41.f,370.f,83.f,{135,77,38,255});
-        rect(cards,29.f,y-37.f,362.f,75.f,{99,54,27,255});
-        rect(cards,32.f,y-33.f,58.f,67.f,{24,49,53,255});
-        rect(cards,36.f,y-29.f,50.f,59.f,{31,72,74,255});
-        label(cards,fmt::format("#{}",idx+1),61.f,y+11.f,.55f,{255,221,79},50.f,{.5f,.5f});
-        label(cards,"DEMON",61.f,y-22.f,.27f,{244,239,175},52.f,{.5f,.5f});
-        label(cards,level.name,99.f,y+22.f,.59f,{255,255,255},184.f);
-        auto status=idx==0?"COMPLETED":idx==1?"IN PROGRESS":"TO BEAT";
-        auto color=idx==0?ccColor3B{130,255,148}:idx==1?ccColor3B{255,228,111}:ccColor3B{219,214,205};
-        label(cards,status,100.f,y+2.f,.36f,color,180.f);
-        label(cards,idx==0?"ATTEMPTS: 1,3K":"ATTEMPTS: --",
-            100.f,y-15.f,.28f,{249,220,158},180.f);
-        label(cards,idx==0?"BEST: 100%":"BEST: --",
-            100.f,y-29.f,.28f,{238,236,212},180.f);
+        // Large GD-style brown list row, lime framing, demon icon, and VIEW.
+        rect(cards,23.f,y-9.f,374.f,18.f,{69,35,17,255});
+        rect(cards,27.f,y-8.f,366.f,16.f,{149,83,42,255});
+        rect(cards,29.f,y-6.f,362.f,12.f,{161,90,46,255});
+        rect(cards,30.f,y-6.f,23.f,12.f,{59,31,22,255});
+        label(cards,"D",41.f,y,.33f,{255,58,65},20.f,{.5f,.5f});
+        label(cards,fmt::format("{}",idx+1),61.f,y,.29f,{255,236,112},18.f,{.5f,.5f});
+        label(cards,level.name,76.f,y+1.f,.39f,{255,255,255},215.f);
         auto view=ButtonSprite::create("VIEW");
-        view->setScale(.61f);
+        view->setScale(.31f);
         auto item=CCMenuItemSpriteExtra::create(view,this,menu_selector(RoadmapPopup::openLevel));
-        item->setPosition({335.f,y+7.f});
+        item->setPosition({348.f,y});
         item->setTag(static_cast<int>(idx));
         auto menu=CCMenu::create();
         menu->setPosition({0.f,0.f});
         menu->addChild(item);
         cards->addChild(menu,1);
-        label(cards,fmt::format("ID {}",level.id),335.f,y-27.f,.27f,
-              {200,224,224},105.f,{.5f,.5f});
     }
     void render() {
         cards->removeAllChildrenWithCleanup(true);
-        page=matches.empty()?0:std::min(page,(matches.size()-1)/2);
+        page=matches.empty()?0:std::min(page,(matches.size()-1)/10);
         pageLabel->setString(fmt::format("{} - {} OF {}  |  PAGE {} / {}",
-            matches.empty()?0:page*2+1,
-            std::min(matches.size(),page*2+2),matches.size(),
-            page+1,std::max<size_t>(1,(matches.size()+1)/2)).c_str());
+            matches.empty()?0:page*10+1,
+            std::min(matches.size(),page*10+10),matches.size(),
+            page+1,std::max<size_t>(1,(matches.size()+9)/10)).c_str());
         if(matches.empty()){
             label(cards,"NO LEVEL FOUND",210.f,147.f,.55f,{255,235,154},310.f,{.5f,.5f});
             return;
         }
-        for(size_t i=page*2;i<std::min(matches.size(),page*2+2);++i)
-            card(matches[i],i%2==0?185.f:91.f);
+        for(size_t i=page*10;i<std::min(matches.size(),page*10+10);++i)
+            card(matches[i],185.f-static_cast<float>(i%10)*17.2f);
+    }
+    GJGameLevel* makeLevel(int idx) {
+        auto level=GJGameLevel::create();
+        level->m_levelID=std::stoi(all[idx].id);
+        level->m_levelName=all[idx].name;
+        return level;
     }
     void openLevel(CCObject* sender) {
         auto idx=static_cast<CCNode*>(sender)->getTag();
         if(idx<0||static_cast<size_t>(idx)>=all.size())return;
         CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(.25f,
-            LevelBrowserLayer::scene(GJSearchObject::create(SearchType::Search,all[idx].id))));
+            LevelInfoLayer::scene(makeLevel(static_cast<int>(idx)),false)));
     }
     void previous(CCObject*) {if(page)--page;render();}
-    void next(CCObject*) {if((page+1)*2<matches.size())++page;render();}
+    void next(CCObject*) {if((page+1)*10<matches.size())++page;render();}
     void search(CCObject*) {
         auto q=lower(searchBox->getString());
         matches.clear();
@@ -125,15 +122,16 @@ class RoadmapPopup : public geode::Popup {
         if(!Popup::init(420.f,310.f))return false;
         all=parse();
         for(size_t i=0;i<all.size();++i)matches.push_back(i);
-        rect(m_mainLayer,10.f,40.f,11.f,230.f,{32,165,24,255});
-        rect(m_mainLayer,399.f,40.f,10.f,230.f,{32,165,24,255});
+        rect(m_mainLayer,10.f,36.f,11.f,232.f,{32,165,24,255});
+        rect(m_mainLayer,399.f,36.f,10.f,232.f,{32,165,24,255});
         rect(m_mainLayer,20.f,274.f,380.f,34.f,{16,115,45,255});
         rect(m_mainLayer,24.f,277.f,372.f,27.f,{28,163,83,255});
         label(m_mainLayer,"ROAD OF DOOM & DESPAIR",210.f,295.f,.54f,
             {255,255,255},341.f,{.5f,.5f});
         label(m_mainLayer,"1 / 75 COMPLETED",210.f,279.f,.29f,
             {229,251,147},300.f,{.5f,.5f});
-        rect(m_mainLayer,22.f,239.f,376.f,31.f,{98,48,20,255});
+        rect(m_mainLayer,22.f,35.f,376.f,202.f,{178,102,53,255});
+        rect(m_mainLayer,22.f,238.f,376.f,33.f,{98,48,20,255});
         searchBox=TextInput::create(244.f,"SEARCH LEVELS OR IDS...");
         searchBox->setPosition({172.f,253.f});
         m_mainLayer->addChild(searchBox);
