@@ -1,7 +1,8 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
 #include <Geode/binding/AppDelegate.hpp>
-#include <Geode/binding/CustomListView.hpp>
+#include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/binding/LevelCell.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJListLayer.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
@@ -51,6 +52,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     std::vector<Entry> m_roadmap;
     std::vector<size_t> m_results;
     GJListLayer* m_list = nullptr;
+    ScrollLayer* m_scroll = nullptr;
     LoadingCircle* m_loading = nullptr;
     CCMenu* m_searchMenu = nullptr;
     TextInput* m_searchBox = nullptr;
@@ -122,15 +124,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     void onRefresh(CCObject*) { loadPage(); }
 
     void showEmptyPage() {
-        auto empty = CCArray::create();
-        loadLevelsFinished(empty, "", 0);
-        if (auto view = m_list->m_listView) {
-            auto label = CCLabelBMFont::create("NO LEVELS FOUND", "bigFont.fnt");
-            label->setScale(.5f);
-            label->setPosition({178.f, 94.f});
-            label->setID("empty-label"_spr);
-            m_list->addChild(label, 7);
-        }
+        loadLevelsFinished(CCArray::create(), "", 0);
     }
 
     void loadPage() {
@@ -139,7 +133,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         updatePageControls();
         if (m_results.empty()) { showEmptyPage(); return; }
         m_loading->setVisible(true);
-        if (m_list->m_listView) m_list->m_listView->setVisible(false);
+        if (m_scroll) m_scroll->setVisible(false);
 
         // Type19 requests a comma-separated list of *real* level IDs.
         // The game downloads level information, creator, song, difficulty,
@@ -281,14 +275,68 @@ public:
     }
 
     void loadLevelsFinished(CCArray* levels,const char*,int) override {
-        if (m_list->m_listView) {
-            m_list->m_listView->removeFromParent();
-            m_list->m_listView->release();
+        // The crash report showed CustomListView dispatching to AchievementCell
+        // with a GJGameLevel, causing a null CCString dereference. Build normal
+        // LevelCell objects directly instead of using CustomListView::create.
+        if (m_scroll) {
+            m_scroll->removeFromParentAndCleanup(true);
+            m_scroll = nullptr;
         }
-        auto view = CustomListView::create(levels,BoomListType::Level,190.f,356.f);
-        view->retain();
-        m_list->addChild(view,6,9);
-        m_list->m_listView = view;
+
+        auto manager = GameLevelManager::get();
+        if (manager->m_levelManagerDelegate == this)
+            manager->m_levelManagerDelegate = nullptr;
+
+        m_scroll = ScrollLayer::create({356.f,190.f});
+        m_scroll->setID("level-scroll"_spr);
+        m_scroll->setPosition({0.f,0.f});
+        m_list->addChild(m_scroll,6);
+        m_scroll->m_contentLayer->setLayout(
+            ColumnLayout::create()
+                ->setGap(0.f)
+                ->setAxisReverse(true)
+                ->setAxisAlignment(AxisAlignment::End)
+                ->setAutoGrowAxis(190.f)
+        );
+
+        size_t shown = 0;
+        if (levels && !m_results.empty()) {
+            const auto start = m_page * kPageSize;
+            const auto end = std::min(m_results.size(), start+kPageSize);
+            // The server can return levels in a different order from requested
+            // IDs. Keep the roadmap ordering regardless of response order.
+            for (size_t i = start; i < end; ++i) {
+                auto const& record = m_roadmap[m_results[i]];
+                GJGameLevel* level = nullptr;
+                for (auto entry : CCArrayExt<CCObject*>(levels)) {
+                    if (auto candidate = typeinfo_cast<GJGameLevel*>(entry)) {
+                        if (fmt::to_string(static_cast<int>(candidate->m_levelID)) == record.id) {
+                            level = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (!level) {
+                    log::warn("Level {} (ID {}) not returned by GD server",record.name,record.id);
+                    continue;
+                }
+                auto cell = LevelCell::create(356.f,90.f);
+                if (!cell) continue;
+                cell->loadFromLevel(level);
+                cell->updateBGColor(static_cast<int>(shown));
+                cell->setID(fmt::format("level-{}"_spr,record.id));
+                m_scroll->m_contentLayer->addChild(cell);
+                ++shown;
+            }
+        }
+        if (shown == 0) {
+            auto text = CCLabelBMFont::create("NO LEVELS FOUND", "bigFont.fnt");
+            text->setScale(.48f);
+            text->setContentSize({356.f,190.f});
+            text->setID("empty-message"_spr);
+            m_scroll->m_contentLayer->addChild(text);
+        }
+        m_scroll->m_contentLayer->updateLayout();
         m_loading->setVisible(false);
         updatePageControls();
     }
