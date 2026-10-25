@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v1.0.0-beta.1",
+  "version": "v1.0.0-beta.2",
   "developer": "Gayan",
-  "description": "B\u00eata : 75 niveaux, recherche, progression sauvegard\u00e9e, filtres et boutons VIEW natifs.",
+  "description": "Personal training roadmap: 75 levels, native VIEW, local progress, notes, runs and startpos markers.",
   "tags": [
     "interface",
     "utility"

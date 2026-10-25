@@ -8,7 +8,22 @@ on:
 permissions:
   contents: read
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Roadmap and metadata
+        run: python3 scripts/check_roadmap.py
+      - name: Local save validation
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/training_data.cpp -o training-data-tests
+          ./training-data-tests
+      - name: UI layout bounds
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/layout.cpp -o layout-tests
+          ./layout-tests
   build:
+    needs: checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,3 +45,4 @@ jobs:
         with:
           name: Road-of-Doom-Windows
           path: ${{ steps.build.outputs.build-output }}/*.geode
+

@@ -1,554 +1,635 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
-#include <Geode/binding/AppDelegate.hpp>
-#include <Geode/ui/ScrollLayer.hpp>
-#include <Geode/binding/LevelCell.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
-#include <Geode/binding/GJListLayer.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
-#include <Geode/binding/LoadingCircle.hpp>
+#include <Geode/binding/LevelCell.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
-#include <Geode/ui/TextInput.hpp>
+#include <Geode/ui/ScrollLayer.hpp>
+#include <array>
+#include <cctype>
+#include <map>
 #include "level_data.hpp"
 #include "Training.hpp"
-#include <Geode/ui/GeodeUI.hpp>
-#include <algorithm>
-#include <cctype>
-#include <string>
-#include <vector>
+#include "ui/Layout.hpp"
+#include "ui/ToolsPopup.hpp"
 
 using namespace geode::prelude;
 
-// Layout and search approach adapted from Integrated Demonlist by hiimjasmine00 (MIT).
-// Unlike the first mockup, this displays genuine Geometry Dash LevelCells, so
-// the game's own VIEW buttons open the actual level information page.
 namespace {
-    struct Entry { std::string name; std::string id; };
+struct Entry {
+    std::string name;
+    int id;
+};
 
-    std::vector<Entry> getRoadmap() {
-        std::vector<Entry> rows;
-        std::string source = road::levels;
-        size_t start = 0;
-        while (start < source.size()) {
-            auto end = source.find('\n', start);
-            auto line = source.substr(start, end == std::string::npos ?
-                                      std::string::npos : end - start);
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            auto sep = line.find('|');
-            if (sep != std::string::npos && sep + 1 < line.size())
-                rows.push_back({ line.substr(0, sep), line.substr(sep + 1) });
-            if (end == std::string::npos) break;
-            start = end + 1;
-        }
-        return rows;
+std::vector<Entry> getRoadmap() {
+    std::vector<Entry> result;
+    std::istringstream source(road::levels);
+    std::string line;
+    while (std::getline(source, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const auto separator = line.find('|');
+        if (separator != std::string::npos)
+            result.push_back({line.substr(0, separator), std::stoi(line.substr(separator + 1))});
     }
+    return result;
+}
 
-    std::string lower(std::string word) {
-        for (auto& c : word)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return word;
-    }
+std::string lower(std::string value) {
+    for (auto& c : value)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return value;
+}
+
+constexpr char const* filters[] = {"ALL", "TO DO", "DONE", "FAVORITES", "GOAL"};
 }
 
 class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
+    struct ViewState {
+        std::string query;
+        unsigned page = 0;
+        unsigned filter = 0;
+    };
     std::vector<Entry> m_roadmap;
     std::vector<size_t> m_results;
-    std::vector<bool> m_completed;
-    unsigned m_filter = 0; // 0: all, 1: remaining, 2: completed
-    GJListLayer* m_list = nullptr;
+    std::map<int, Ref<GJGameLevel>> m_cache;
+    std::array<ViewState, 2> m_views;
+    int m_tab = 0;
+    bool m_showAllStartpos = false;
+    bool m_inFlight = false;
+    unsigned m_generation = 0;
+    unsigned m_requestGeneration = 0;
+    std::string m_requestKey;
+    std::vector<int> m_requestedIds;
+    std::string m_networkMessage;
+
+    CCNode* m_window = nullptr;
+    CCNode* m_content = nullptr;
+    CCNode* m_toolbar = nullptr;
     ScrollLayer* m_scroll = nullptr;
-    LoadingCircle* m_loading = nullptr;
-    CCMenu* m_searchMenu = nullptr;
-    TextInput* m_searchBox = nullptr;
-    CCLabelBMFont* m_countLabel = nullptr;
+    TextInput* m_search = nullptr;
+    CCLabelBMFont* m_progress = nullptr;
     CCLabelBMFont* m_pageLabel = nullptr;
-    CCLabelBMFont* m_progressLabel = nullptr;
-    CCLabelBMFont* m_filterLabel = nullptr;
-    CCMenuItemSpriteExtra* m_leftButton = nullptr;
-    CCMenuItemSpriteExtra* m_rightButton = nullptr;
-    CCMenuItemSpriteExtra* m_firstButton = nullptr;
-    CCMenuItemSpriteExtra* m_lastButton = nullptr;
-    CCMenuItemSpriteExtra* m_pageButton = nullptr;
-    bool m_inFlight=false, m_reloadPending=false;
-    unsigned m_tab=0;
-    unsigned m_page = 0;
-    std::string m_query;
-    static constexpr size_t kPageSize = 10;
+    CCLabelBMFont* m_dashboardHeading = nullptr;
+    CCMenuItemSpriteExtra* m_tabs[3]{};
+    CCMenuItemSpriteExtra* m_filter = nullptr;
+    CCMenuItemSpriteExtra* m_previous = nullptr;
+    CCMenuItemSpriteExtra* m_next = nullptr;
 
-    CCMenuItemSpriteExtra* addMenuButton(CCMenu* menu, const char* sprite,
-                                         CCPoint pos, SEL_MenuHandler callback,
-                                         const char* name) {
-        auto image = CCSprite::createWithSpriteFrameName(sprite);
-        auto item = CCMenuItemSpriteExtra::create(image, this, callback);
-        item->setPosition(pos);
-        item->setID(name);
-        menu->addChild(item);
-        return item;
+    static constexpr size_t pageSize = 10;
+
+    ViewState& view() { return m_views[m_tab == 1 ? 1 : 0]; }
+
+    bool knownId(int id) const {
+        return std::any_of(m_roadmap.begin(), m_roadmap.end(),
+                           [id](Entry const& entry) { return entry.id == id; });
     }
 
-    void updateProgressLabel() {
-        if (!m_progressLabel) return;
-        const auto done = std::count(m_completed.begin(), m_completed.end(), true);
-        m_progressLabel->setString(
-            fmt::format("PROGRESS: {}/{}", done, m_roadmap.size()).c_str());
+    void syncProgress() {
+        if (!Mod::get()->getSettingValue<bool>("auto-sync-progress")) return;
+        auto& store = training::Store::get();
+        auto manager = GameLevelManager::get();
+        bool changed = false;
+        for (auto const& entry : m_roadmap) {
+            int best = store.levels[entry.id].best;
+            if (auto saved = manager->getSavedLevel(entry.id))
+                best = std::max(best, std::clamp(saved->getNormalPercent(), 0, 100));
+            if (auto cached = m_cache.find(entry.id); cached != m_cache.end())
+                best = std::max(best, std::clamp(cached->second->getNormalPercent(), 0, 100));
+            if (best != store.levels[entry.id].best) {
+                store.levels[entry.id].best = best;
+                changed = true;
+            }
+        }
+        if (changed) store.save();
     }
 
-    void rebuildResults() {
+    void rebuildResults(bool resetPage = false) {
         m_results.clear();
+        auto& state = view();
+        auto& store = training::Store::get();
+        if (resetPage) state.page = 0;
         for (size_t i = 0; i < m_roadmap.size(); ++i) {
-            auto& state=training::Store::get().levels[std::stoi(m_roadmap[i].id)];
-            m_completed[i]=state.best==100;
-            if(m_filter==3 && !state.favorite)continue;
-            if(m_filter==4 && training::Store::get().goal!=std::stoi(m_roadmap[i].id))continue;
-            if(m_filter==5 && state.presets.empty())continue;
-            if (m_filter == 1 && m_completed[i]) continue;
-            if (m_filter == 2 && !m_completed[i]) continue;
-            if (lower(m_roadmap[i].name).find(m_query) != std::string::npos ||
-                m_roadmap[i].id.find(m_query) != std::string::npos)
+            const auto& entry = m_roadmap[i];
+            const auto& p = store.levels[entry.id];
+            if (m_tab == 1) {
+                if (!m_showAllStartpos && p.presets.empty()) continue;
+            } else {
+                if (state.filter == 1 && p.best == 100) continue;
+                if (state.filter == 2 && p.best != 100) continue;
+                if (state.filter == 3 && !p.favorite) continue;
+                if (state.filter == 4 && store.goal != entry.id) continue;
+            }
+            if (lower(entry.name).find(state.query) != std::string::npos ||
+                std::to_string(entry.id).find(state.query) != std::string::npos)
                 m_results.push_back(i);
         }
-        m_page = 0;
+        const unsigned last = m_results.empty() ? 0 :
+            static_cast<unsigned>((m_results.size() - 1) / pageSize);
+        state.page = std::min(state.page, last);
     }
 
-    void onFilter(CCObject*) {
-        m_filter = (m_filter + 1) % 6;
-        static constexpr const char* labels[] = {
-            "FILTER: ALL", "FILTER: TO DO", "FILTER: DONE", "FILTER: FAVORITES", "FILTER: GOAL", "FILTER: STARTPOS"
-        };
-        m_filterLabel->setString(labels[m_filter]);
+    void updateChrome() {
+        static constexpr char const* names[] = {"ROADMAP", "STARTPOS", "PROGRESSION"};
+        for (int i = 0; i < 3; ++i)
+            roadui::updateButton(m_tabs[i], names[i], m_tab == i);
+        m_toolbar->setVisible(m_tab != 2);
+        m_dashboardHeading->setVisible(m_tab == 2);
+        if (m_tab != 2) {
+            const auto caption = m_tab == 1 ?
+                (m_showAllStartpos ? "ALL LEVELS" : "SAVED ONLY") : filters[view().filter];
+            roadui::updateButton(m_filter, caption);
+        }
+        const auto& store = training::Store::get();
+        const auto done = std::count_if(m_roadmap.begin(), m_roadmap.end(),
+            [&store](Entry const& entry) { return store.levels.at(entry.id).best == 100; });
+        m_progress->setString(fmt::format("{} / 75 done", done).c_str());
+        m_progress->limitLabelWidth(100, .28f, .18f);
+
+        const bool hasPages = m_tab != 2 && !m_results.empty();
+        const auto pages = std::max<size_t>(1, (m_results.size() + pageSize - 1) / pageSize);
+        m_pageLabel->setVisible(hasPages);
+        if (hasPages)
+            m_pageLabel->setString(fmt::format("PAGE {} / {}", view().page + 1, pages).c_str());
+        m_previous->setVisible(hasPages && view().page > 0);
+        m_next->setVisible(hasPages && view().page + 1 < pages);
+    }
+
+    void clearContent() {
+        m_scroll = nullptr;
+        m_content->removeAllChildrenWithCleanup(true);
+        roadui::rect(m_content, 0, 0, roadui::layout::contentWidth,
+                     roadui::layout::contentHeight, roadui::inset);
+    }
+
+    void renderEmpty() {
+        using namespace roadui::layout;
+        clearContent();
+        const bool emptyStartpos = m_tab == 1 && !m_showAllStartpos && view().query.empty();
+        roadui::label(m_content, emptyStartpos ? "NO STARTPOS SAVED" : "NO MATCHING LEVELS",
+                      contentWidth / 2, 110, contentWidth - 28, .44f);
+        roadui::label(m_content, emptyStartpos ?
+                      "Choose a level to create your first practice marker." :
+                      "Try another name, ID or filter.",
+                      contentWidth / 2, 83, contentWidth - 28, .27f, roadui::muted);
+        auto actions = roadui::menu(m_content);
+        roadui::button(actions, this, menu_selector(RoadmapListLayer::onResetSearch),
+                       emptyStartpos ? "CHOOSE A LEVEL" : "CLEAR SEARCH",
+                       contentWidth / 2, 46, 188, 26, true);
+        updateChrome();
+    }
+
+    void openDetail(size_t index, int tab) {
+        if (index >= m_roadmap.size()) return;
+        syncProgress();
+        const auto& entry = m_roadmap[index];
+        Ref<RoadmapListLayer> self(this);
+        auto popup = training::Detail::create(entry.id, entry.name, tab, [self] {
+            if (self->isRunning()) self->refreshLocal();
+        });
+        if (popup) popup->show();
+    }
+
+    void onDetail(CCObject* sender) {
+        openDetail(static_cast<size_t>(sender->getTag()), m_tab == 1 ? 2 : 0);
+    }
+
+    void renderStartpos() {
+        using namespace roadui::layout;
+        clearContent();
+        if (m_results.empty()) { renderEmpty(); return; }
+        const auto begin = view().page * pageSize;
+        const auto end = std::min(m_results.size(), begin + pageSize);
+        const auto count = end - begin;
+        constexpr float rowHeight = 56.f;
+        const float height = std::max(contentHeight, count * rowHeight);
+        m_scroll = ScrollLayer::create(CCSize{contentWidth, contentHeight});
+        m_scroll->m_contentLayer->setContentSize({contentWidth, height});
+        m_content->addChild(m_scroll);
+        for (size_t i = begin; i < end; ++i) {
+            const auto index = m_results[i];
+            const auto& entry = m_roadmap[index];
+            const auto count = training::Store::get().levels[entry.id].presets.size();
+            const float y = height - (i - begin + 1) * rowHeight;
+            auto row = roadui::panel(m_scroll->m_contentLayer, 0, y + 2,
+                                     contentWidth, rowHeight - 4);
+            roadui::label(row, entry.name, 12, 34, 294, .42f, roadui::text, true);
+            roadui::label(row, count ? fmt::format("{} saved markers", count) : "No saved markers",
+                          12, 14, 290, .26f, roadui::muted, true);
+            auto actions = roadui::menu(row);
+            auto button = roadui::button(actions, this, menu_selector(RoadmapListLayer::onDetail),
+                                         count ? "MANAGE" : "ADD",
+                                         contentWidth - 56, 26, 94, 25, count > 0);
+            button->setTag(static_cast<int>(index));
+        }
+        m_scroll->scrollToTop();
+        updateChrome();
+    }
+
+    void renderDashboard() {
+        using namespace roadui::layout;
+        clearContent();
+        auto& store = training::Store::get();
+        int done = 0, favorites = 0, runs = 0, presets = 0;
+        std::string goal = "Choose a current goal";
+        int goalBest = 0;
+        for (auto const& entry : m_roadmap) {
+            const auto& p = store.levels[entry.id];
+            done += p.best == 100;
+            favorites += p.favorite;
+            runs += static_cast<int>(p.runs.size());
+            presets += static_cast<int>(p.presets.size());
+            if (entry.id == store.goal) { goal = entry.name; goalBest = p.best; }
+        }
+        auto complete = roadui::panel(m_content, 0, 103, 138, 73);
+        roadui::label(complete, "COMPLETED", 69, 55, 122, .27f, roadui::muted);
+        roadui::label(complete, fmt::format("{} / 75", done), 69, 26, 122, .64f, roadui::green);
+        auto goalCard = roadui::panel(m_content, 146, 103, 286, 73);
+        roadui::label(goalCard, "CURRENT GOAL", 12, 55, 260, .27f, roadui::muted, true);
+        roadui::label(goalCard, goal, 12, 31, 260, .44f, roadui::text, true);
+        roadui::label(goalCard, store.goal ? fmt::format("Normal best: {}%", goalBest) :
+                      "Open a level's Overview to set it.",
+                      12, 12, 260, .24f, roadui::muted, true);
+        roadui::rect(m_content, 0, 85, contentWidth, 8, roadui::surface);
+        roadui::rect(m_content, 0, 85, contentWidth * done / 75.f, 8, roadui::selectedFill);
+
+        const char* labels[] = {"FAVORITES", "RUNS", "STARTPOS"};
+        const int values[] = {favorites, runs, presets};
+        for (int i = 0; i < 3; ++i) {
+            auto card = roadui::panel(m_content, i * 146.f, 10, 140, 63);
+            roadui::label(card, labels[i], 70, 45, 126, .27f, roadui::muted);
+            roadui::label(card, std::to_string(values[i]), 70, 20, 126, .6f);
+        }
+        updateChrome();
+    }
+
+    void renderRoadmap() {
+        using namespace roadui::layout;
+        clearContent();
+        if (m_results.empty()) { renderEmpty(); return; }
+        const auto begin = view().page * pageSize;
+        const auto end = std::min(m_results.size(), begin + pageSize);
+        const auto count = end - begin;
+        const float height = std::max(contentHeight, count * rowHeight);
+        m_scroll = ScrollLayer::create(CCSize{contentWidth, contentHeight});
+        m_scroll->setID("roadmap-scroll"_spr);
+        m_scroll->m_contentLayer->setContentSize({contentWidth, height});
+        m_content->addChild(m_scroll);
+        for (size_t i = begin; i < end; ++i) {
+            const size_t index = m_results[i];
+            const auto& entry = m_roadmap[index];
+            const float y = height - (i - begin + 1) * rowHeight;
+            auto row = CCNode::create();
+            row->setContentSize({contentWidth, rowHeight});
+            row->setPosition({0, y});
+            row->setID(fmt::format("roadmap-row-{}"_spr, entry.id));
+            m_scroll->m_contentLayer->addChild(row);
+            auto cached = m_cache.find(entry.id);
+            GJGameLevel* level = cached == m_cache.end() ? nullptr : cached->second.data();
+            if (level) {
+                auto cell = LevelCell::create(nativeCellWidth, rowHeight);
+                if (cell) {
+                    cell->setContentSize({nativeCellWidth, rowHeight});
+                    cell->setAnchorPoint({0, 0});
+                    cell->setPosition({0, 0});
+                    cell->loadFromLevel(level);
+                    if (auto menu = cell->m_mainMenu) {
+                        menu->setPosition({0, 0});
+                        if (auto creator = menu->getChildByID("creator-name")) {
+                            creator->setAnchorPoint({0, .5f});
+                            creator->setPosition({50, 53});
+                        }
+                        if (auto view = menu->getChildByID("view-button"))
+                            view->setPosition({nativeCellWidth - 43, rowHeight * .5f});
+                    }
+                    cell->updateBGColor(static_cast<int>(i - begin));
+                    row->addChild(cell);
+                }
+            } else {
+                roadui::rect(row, 0, 0, nativeCellWidth, rowHeight,
+                             (i - begin) % 2 ? ccColor4B{65, 57, 49, 255} :
+                                              ccColor4B{56, 49, 44, 255});
+                roadui::label(row, entry.name, 14, 59, nativeCellWidth - 30, .49f,
+                              roadui::text, true);
+                roadui::label(row, fmt::format("ID {}  /  {}", entry.id,
+                              m_inFlight ? std::string("Loading...") :
+                              (m_networkMessage.empty() ? "Info unavailable - Refresh to retry" : m_networkMessage)),
+                              14, 29, nativeCellWidth - 30, .26f, roadui::muted, true);
+            }
+            // RDoD owns a narrow gutter outside the native cell. Nothing is
+            // inserted over its title, completion badge, VIEW or thumbnail.
+            roadui::rect(row, nativeCellWidth, 0, detailGutter, rowHeight, roadui::surface);
+            roadui::rect(row, nativeCellWidth, 0, 1, rowHeight, roadui::outline);
+            auto actions = roadui::menu(row);
+            auto detail = roadui::button(actions, this, menu_selector(RoadmapListLayer::onDetail),
+                                         "i", nativeCellWidth + detailGutter / 2,
+                                         rowHeight / 2, 22, 26);
+            detail->setTag(static_cast<int>(index));
+            detail->setID("roadmap-details-button"_spr);
+            const auto& p = training::Store::get().levels[entry.id];
+            roadui::label(row, fmt::format("{}%", p.best),
+                          nativeCellWidth + detailGutter / 2, 73,
+                          detailGutter - 2, .21f, roadui::muted);
+            if (p.favorite)
+                roadui::label(row, "*", nativeCellWidth + detailGutter / 2, 17,
+                              24, .38f, roadui::green);
+        }
+        m_scroll->scrollToTop();
+        updateChrome();
+    }
+
+    void render() {
+        if (m_tab == 2) renderDashboard();
+        else if (m_tab == 1) renderStartpos();
+        else renderRoadmap();
+    }
+
+    void refreshLocal() {
+        syncProgress();
         rebuildResults();
-        loadPage();
+        render();
     }
 
-    void onToggleCompleted(CCObject* sender) {
-        auto index=static_cast<size_t>(sender->getTag());
-        if(index<m_roadmap.size()) training::Detail::create(std::stoi(m_roadmap[index].id),m_roadmap[index].name)->show();
-    }
-    void onDashboard(CCObject*) {
-        m_tab=2;
-        if(m_scroll){m_scroll->removeFromParentAndCleanup(true);m_scroll=nullptr;}
-        auto& s=training::Store::get();int done=0,favorites=0,runs=0,presets=0;
-        std::string goal="None";
-        for(auto const& e:m_roadmap){auto& p=s.levels[std::stoi(e.id)];done+=p.best==100;favorites+=p.favorite;runs+=p.runs.size();presets+=p.presets.size();if(std::stoi(e.id)==s.goal)goal=e.name;}
-        m_scroll=ScrollLayer::create({356,190});m_scroll->m_contentLayer->setContentSize({356,190});m_list->addChild(m_scroll,6);
-        auto text=CCLabelBMFont::create(fmt::format("YOUR ROAD\n\nCompleted: {}/75 ({}%)\nGoal: {}\nFavorites: {}\nRuns: {} | Startpos: {}",done,done*100/75,goal,favorites,runs,presets).c_str(),"bigFont.fnt");text->setScale(.45f);text->limitLabelWidth(330,.45f,.2f);text->setPosition({178,110});m_scroll->m_contentLayer->addChild(text);
-        auto bar=CCLayerColor::create({50,40,35,255},320,12);bar->setPosition({18,20});m_scroll->m_contentLayer->addChild(bar);auto fill=CCLayerColor::create({80,200,100,255},320.f*done/75,12);bar->addChild(fill);
-        m_loading->setVisible(false);m_searchMenu->setVisible(false);updatePageControls();
-    }
-    void onRoadmap(CCObject*) {m_tab=0;m_filter=0;m_filterLabel->setString("FILTER: ALL");m_searchMenu->setVisible(true);onRefresh(nullptr);}
-    void onSettings(CCObject*) {openSettingsPopup(Mod::get());}
-    void onStartpos(CCObject*) {
-        m_tab=1;m_searchMenu->setVisible(true);m_filter=5; m_filterLabel->setString("FILTER: STARTPOS");rebuildResults();loadPage();
-    }
-    void onBackup(CCObject*) {
-        auto path=Mod::get()->getSaveDir()/"training-backup.json";
-        std::ofstream f(path,std::ios::binary); matjson::Value backup;backup["schema"]=1;backup["payload"]=training::Store::get().encode();f<<backup.dump(); f.close();
-        FLAlertLayer::create("Backup",f.fail()?"Backup failed.":"Saved training-backup.json in the mod save directory.","OK")->show();
-    }
-    void onRestore(CCObject*) {
-        auto path=Mod::get()->getSaveDir()/"training-backup.json";std::ifstream f(path,std::ios::binary);
-        if(!f || std::filesystem::file_size(path)>2000000){FLAlertLayer::create("Import","Backup missing or too large.","OK")->show();return;}
-        std::string raw((std::istreambuf_iterator<char>(f)),{});training::Store candidate;
-        auto json=matjson::parse(raw);
-        if(!json || json.unwrap()["schema"].asInt().unwrapOr(0)!=1){FLAlertLayer::create("Import","Unsupported backup schema.","OK")->show();return;}
-        raw=json.unwrap()["payload"].asString().unwrapOr("");
-        if(!candidate.decode(raw)){FLAlertLayer::create("Import","Invalid backup. Nothing changed.","OK")->show();return;}
-        for(auto const& [id,p]:candidate.levels){bool found=false;for(auto const& e:m_roadmap)if(std::stoi(e.id)==id)found=true;if(!found)return;}
-        if(candidate.goal!=0){bool found=false;for(auto const& e:m_roadmap)if(std::stoi(e.id)==candidate.goal)found=true;if(!found)return;}
-        auto& current=training::Store::get();
-        std::ofstream before(Mod::get()->getSaveDir()/"training-before-import.txt");before<<current.encode();before.close();if(before.fail())return;
-        for(auto const& [id,p]:current.levels) candidate.levels[id].best=std::max(candidate.levels[id].best,p.best);
-        current=std::move(candidate);current.save();onRefresh(nullptr);
-    }
-    void addProgressButton(CCNode* row, size_t index) {
-        auto menu = CCMenu::create();
-        menu->setPosition({0.f, 0.f});
-        menu->setID("progress-menu"_spr);
-        auto label = CCLabelBMFont::create(
-            "DETAILS", "goldFont.fnt");
-        label->setScale(.52f);
-        auto button = CCMenuItemSpriteExtra::create(
-            label, this, menu_selector(RoadmapListLayer::onToggleCompleted));
-        button->setTag(static_cast<int>(index));
-        button->setPosition({310.f, 76.f});
-        button->setID("progress-toggle"_spr);
-        menu->addChild(button);
-        row->addChild(menu, 20);
+    void stopRequest() {
+        unschedule(schedule_selector(RoadmapListLayer::onRequestTimeout));
+        auto manager = GameLevelManager::get();
+        if (manager->m_levelManagerDelegate == this)
+            manager->m_levelManagerDelegate = nullptr;
+        m_inFlight = false;
+        m_requestKey.clear();
+        m_requestedIds.clear();
     }
 
-    void updatePageControls() {
-        size_t total = m_results.size();
-        size_t pages = std::max<size_t>(1, (total + kPageSize - 1) / kPageSize);
-        auto count = fmt::format("{} TO {} OF {}", total ? m_page * kPageSize + 1 : 0,
-            std::min(total, (m_page + 1) * kPageSize), total);
-        m_countLabel->setString(count.c_str());
-        m_countLabel->limitLabelWidth(110.f, .6f, .0f);
-        m_pageLabel->setString(fmt::format("{}", m_page + 1).c_str());
-        bool multiple = pages > 1 && m_tab!=2;
-        m_leftButton->setVisible(multiple && m_page > 0);
-        m_firstButton->setVisible(multiple && m_page > 0);
-        m_rightButton->setVisible(multiple && m_page + 1 < pages);
-        m_lastButton->setVisible(multiple && m_page + 1 < pages);
-        m_pageButton->setVisible(multiple);
-    }
-
-    void onPrevious(CCObject*) {
-        if (m_page > 0) { --m_page; loadPage(); }
-    }
-    void onNext(CCObject*) {
-        if ((m_page + 1) * kPageSize < m_results.size()) { ++m_page; loadPage(); }
-    }
-    void onFirst(CCObject*) { m_page = 0; loadPage(); }
-    void onLast(CCObject*) {
-        if (m_results.empty()) return;
-        m_page = static_cast<unsigned>((m_results.size() - 1) / kPageSize);
-        loadPage();
-    }
-    void onBack(CCObject*) {
-        CCDirector::get()->popSceneWithTransition(.5f, kPopTransitionFade);
-    }
-    void onSearch(CCObject*) {
-        std::string query = lower(m_searchBox->getString());
-        m_query = query;
-        rebuildResults();
-        loadPage();
-    }
-    void onRefresh(CCObject*) { rebuildResults();updateProgressLabel();loadPage(); }
-
-    void showEmptyPage() {
-        renderRows(nullptr,true);
+    void onRequestTimeout(float) {
+        stopRequest();
+        m_networkMessage = "Loading timed out. Use Refresh to try again.";
+        if (m_tab == 0) renderRoadmap();
     }
 
     void loadPage() {
-        if(m_tab==2){onDashboard(nullptr);return;}
-        if(m_inFlight){m_reloadPending=true;renderRows(nullptr,false);return;}
-        if (auto old = m_list->getChildByID("empty-label"_spr))
-            old->removeFromParent();
-        updatePageControls();
-        if (m_results.empty()) { showEmptyPage(); return; }
-        renderRows(nullptr,false);
-
-        // Type19 requests a comma-separated list of *real* level IDs.
-        // The game downloads level information, creator, song, difficulty,
-        // stars, and all normal LevelCell controls by itself.
-        auto search = GJSearchObject::create(SearchType::Type19);
+        if (m_tab != 0) { render(); return; }
+        if (m_inFlight) { renderRoadmap(); return; }
         std::string ids;
-        size_t start = m_page * kPageSize;
-        size_t end = std::min(m_results.size(), start + kPageSize);
-        for (size_t i = start; i < end; ++i) {
-            if (!ids.empty()) ids += ',';
-            ids += m_roadmap[m_results[i]].id;
+        std::vector<int> missing;
+        const auto begin = view().page * pageSize;
+        const auto end = std::min(m_results.size(), begin + pageSize);
+        for (size_t i = begin; i < end; ++i) {
+            const int id = m_roadmap[m_results[i]].id;
+            if (!m_cache.contains(id)) {
+                missing.push_back(id);
+                if (!ids.empty()) ids += ',';
+                ids += std::to_string(id);
+            }
         }
+        if (missing.empty()) { renderRoadmap(); return; }
+        auto manager = GameLevelManager::get();
+        if (manager->m_levelManagerDelegate && manager->m_levelManagerDelegate != this) {
+            m_networkMessage = "Another level request is running. Use Refresh to retry.";
+            renderRoadmap();
+            return;
+        }
+        auto search = GJSearchObject::create(SearchType::Type19);
         search->m_searchQuery = ids;
-        if(GameLevelManager::get()->m_levelManagerDelegate && GameLevelManager::get()->m_levelManagerDelegate!=this){renderRows(nullptr,true);return;}
-        GameLevelManager::get()->m_levelManagerDelegate = this;
-        m_inFlight=true;
-        GameLevelManager::get()->getOnlineLevels(search);
+        m_requestKey = search->getKey();
+        m_requestedIds = std::move(missing);
+        m_requestGeneration = m_generation;
+        if (auto cached = manager->getStoredOnlineLevels(m_requestKey.c_str())) {
+            cacheLevels(cached);
+            m_requestedIds.clear();
+            m_requestKey.clear();
+            syncProgress();
+            renderRoadmap();
+            return;
+        }
+        m_inFlight = true;
+        m_networkMessage.clear();
+        manager->m_levelManagerDelegate = this;
+        scheduleOnce(schedule_selector(RoadmapListLayer::onRequestTimeout), 15.f);
+        renderRoadmap();
+        manager->getOnlineLevels(search);
+    }
+
+    void cacheLevels(CCArray* levels) {
+        if (!levels) return;
+        for (auto level : CCArrayExt<GJGameLevel*>(levels)) {
+            if (!level) continue;
+            const int id = static_cast<int>(level->m_levelID);
+            if (knownId(id)) m_cache[id] = level;
+        }
+    }
+
+    void onTab(CCObject* sender) {
+        if (m_tab != 2) view().query = lower(m_search->getString());
+        m_tab = sender->getTag();
+        ++m_generation;
+        if (m_tab != 2) m_search->setString(view().query);
+        syncProgress();
+        rebuildResults();
+        loadPage();
+    }
+
+    void onFilter(CCObject*) {
+        if (m_tab == 2) return;
+        if (m_tab == 1) m_showAllStartpos = !m_showAllStartpos;
+        else view().filter = (view().filter + 1) % std::size(filters);
+        ++m_generation;
+        rebuildResults(true);
+        loadPage();
+    }
+
+    void onSearch(CCObject*) {
+        if (m_tab == 2) return;
+        view().query = lower(m_search->getString());
+        ++m_generation;
+        rebuildResults(true);
+        loadPage();
+    }
+
+    void onResetSearch(CCObject*) {
+        if (m_tab == 2) return;
+        view().query.clear();
+        view().filter = 0;
+        m_showAllStartpos = m_tab == 1;
+        m_search->setString("");
+        ++m_generation;
+        rebuildResults(true);
+        loadPage();
+    }
+
+    void onPrevious(CCObject*) {
+        if (m_tab != 2 && view().page > 0) {
+            --view().page;
+            ++m_generation;
+            loadPage();
+        }
+    }
+
+    void onNext(CCObject*) {
+        if (m_tab != 2 && (view().page + 1) * pageSize < m_results.size()) {
+            ++view().page;
+            ++m_generation;
+            loadPage();
+        }
+    }
+
+    void onRefresh(CCObject*) {
+        ++m_generation;
+        if (m_tab == 0 && !m_inFlight) {
+            const auto begin = view().page * pageSize;
+            const auto end = std::min(m_results.size(), begin + pageSize);
+            for (size_t i = begin; i < end; ++i) m_cache.erase(m_roadmap[m_results[i]].id);
+        }
+        m_networkMessage.clear();
+        syncProgress();
+        rebuildResults();
+        loadPage();
+    }
+
+    void onTools(CCObject*) {
+        std::vector<int> ids;
+        for (auto const& entry : m_roadmap) ids.push_back(entry.id);
+        Ref<RoadmapListLayer> self(this);
+        if (auto popup = roadui::ToolsPopup::create(std::move(ids), [self] {
+            if (self->isRunning()) self->refreshLocal();
+        })) popup->show();
+    }
+
+    void onBack(CCObject*) {
+        CCDirector::get()->popSceneWithTransition(.3f, kPopTransitionFade);
     }
 
 public:
     static RoadmapListLayer* create() {
-        auto ret = new RoadmapListLayer();
-        if (ret->init()) { ret->autorelease(); return ret; }
-        delete ret;
+        auto layer = new RoadmapListLayer();
+        if (layer->init()) { layer->autorelease(); return layer; }
+        delete layer;
         return nullptr;
     }
 
     static CCScene* scene() {
         auto scene = CCScene::create();
-        scene->addChild(RoadmapListLayer::create());
+        if (auto layer = RoadmapListLayer::create()) scene->addChild(layer);
         return scene;
     }
 
     bool init() override {
+        using namespace roadui::layout;
         if (!CCLayer::init()) return false;
         setID("RoadmapListLayer"_spr);
         m_roadmap = getRoadmap();
-        for (const auto& entry : m_roadmap)
-            m_completed.push_back(
-                training::Store::get().levels[std::stoi(entry.id)].best==100);
-        rebuildResults();
+        const auto screen = CCDirector::get()->getWinSize();
+        roadui::rect(this, 0, 0, screen.width, screen.height, roadui::background);
+        const float scale = scaleFor(screen.width, screen.height);
+        m_window = roadui::panel(this, (screen.width - width * scale) / 2,
+                                (screen.height - height * scale) / 2,
+                                width, height);
+        m_window->setScale(scale);
+        m_window->setID("roadmap-window"_spr);
+        roadui::rect(m_window, 1, 273, width - 2, 28, roadui::inset);
+        roadui::label(m_window, "THE ROAD OF DOOM AND DESPAIR",
+                      width / 2, 288, 306, .44f);
+        auto header = roadui::menu(m_window);
+        roadui::button(header, this, menu_selector(RoadmapListLayer::onBack),
+                       "<", 31, 288, 26, 22);
+        roadui::button(header, this, menu_selector(RoadmapListLayer::onTools),
+                       "TOOLS", width - 42, 288, 64, 22);
 
-        auto screen = CCDirector::get()->getWinSize();
-        auto background = CCSprite::create("GJ_gradientBG.png");
-        background->setAnchorPoint({0.f, 0.f});
-        background->setScaleX((screen.width + 10.f) / background->getContentWidth());
-        background->setScaleY((screen.height + 10.f) / background->getContentHeight());
-        background->setPosition({-5.f, -5.f});
-        background->setColor({51,51,51});
-        addChild(background);
+        static constexpr char const* tabNames[] = {"ROADMAP", "STARTPOS", "PROGRESSION"};
+        auto tabs = roadui::menu(m_window);
+        for (int i = 0; i < 3; ++i) {
+            const auto bounds = roadui::layout::tab(i);
+            m_tabs[i] = roadui::button(tabs, this, menu_selector(RoadmapListLayer::onTab),
+                                      tabNames[i], bounds.x + bounds.width / 2,
+                                      bounds.y + bounds.height / 2,
+                                      bounds.width, bounds.height, i == 0);
+            m_tabs[i]->setTag(i);
+        }
 
-        // Real native GJListLayer: green/cyan header and border, brown level panel.
-        m_list = GJListLayer::create(nullptr, "The Road of Doom and Despair",
-                       {0, 0, 0, 180}, 356.f, 220.f, 0);
-        m_list->setPosition(screen / 2.f - m_list->getContentSize() / 2.f);
-        m_list->setID("roadmap-list"_spr);
-        addChild(m_list, 2);
+        m_toolbar = CCNode::create();
+        m_toolbar->setPosition({toolbar.x, toolbar.y});
+        m_window->addChild(m_toolbar);
+        m_search = roadui::input(m_toolbar, 142, 12, 284, "Search by level name or ID...");
+        m_search->setMaxCharCount(80);
+        auto searchActions = roadui::menu(m_toolbar);
+        roadui::button(searchActions, this, menu_selector(RoadmapListLayer::onSearch),
+                       "GO", 305, 12, 32, 24);
+        m_filter = roadui::button(searchActions, this, menu_selector(RoadmapListLayer::onFilter),
+                                  "ALL", 380, 12, 96, 24);
+        m_dashboardHeading = roadui::label(m_window, "YOUR ROAD TO NULLSCAPES",
+                                          width / 2, 230, contentWidth, .3f, roadui::muted);
+        m_dashboardHeading->setVisible(false);
 
-        m_searchMenu = CCMenu::create();
-        m_searchMenu->setContentSize({356.f,30.f});
-        m_searchMenu->setPosition({0.f,190.f});
-        m_searchMenu->setID("search-menu"_spr);
-        m_list->addChild(m_searchMenu, 7);
+        m_content = CCNode::create();
+        m_content->setPosition({padding, contentBottom});
+        m_content->setContentSize({contentWidth, contentHeight});
+        m_content->setID("roadmap-content"_spr);
+        m_window->addChild(m_content);
 
-        auto brown = CCLayerColor::create({194,114,62,255}, 356.f, 30.f);
-        brown->setID("search-background"_spr);
-        m_searchMenu->addChild(brown);
-
-        m_searchBox = TextInput::create(310.f, "Search Levels...");
-        m_searchBox->setTextAlign(TextInputAlign::Left);
-        m_searchBox->setPosition({165.f,15.f});
-        m_searchBox->getInputNode()->setLabelPlaceholderScale(.4f);
-        m_searchBox->getInputNode()->setMaxLabelScale(.4f);
-        m_searchBox->getBGSprite()->setContentSize({620.f,40.f});
-        m_searchBox->getBGSprite()->setScale(.5f);
-        m_searchBox->setID("search-input"_spr);
-        m_searchMenu->addChild(m_searchBox);
-
-        auto find = CCMenuItemSpriteExtra::create(
-            CCSprite::createWithSpriteFrameName("gj_findBtn_001.png"),
-            this, menu_selector(RoadmapListLayer::onSearch));
-        find->setScale(.7f);
-        find->setPosition({337.f,15.f});
-        find->setID("find"_spr);
-        m_searchMenu->addChild(find);
-
-        auto controls = CCMenu::create();
-        controls->setPosition({0.f,0.f});
-        controls->setID("controls"_spr);
-        addChild(controls, 5);
-        m_leftButton = addMenuButton(controls,"GJ_arrow_03_001.png",
-                       {24.f,screen.height/2.f},
-                       menu_selector(RoadmapListLayer::onPrevious),"previous"_spr);
-        m_rightButton = addMenuButton(controls,"GJ_arrow_03_001.png",
-                        {screen.width-24.f,screen.height/2.f},
-                        menu_selector(RoadmapListLayer::onNext),"next"_spr);
-        static_cast<CCSprite*>(m_rightButton->getNormalImage())->setFlipX(true);
-        addMenuButton(controls,"GJ_arrow_01_001.png",
-                      {25.f,screen.height-25.f},
-                      menu_selector(RoadmapListLayer::onBack),"back"_spr);
-
-        m_firstButton = addMenuButton(controls,"GJ_arrow_02_001.png",
-                        {22.f,screen.height/2.f-52.f},
-                        menu_selector(RoadmapListLayer::onFirst),"first"_spr);
-        m_firstButton->setScale(.65f);
-        m_lastButton = addMenuButton(controls,"GJ_arrow_02_001.png",
-                       {screen.width-22.f,screen.height/2.f-52.f},
-                       menu_selector(RoadmapListLayer::onLast),"last"_spr);
-        m_lastButton->setScale(.65f);
-        static_cast<CCSprite*>(m_lastButton->getNormalImage())->setFlipX(true);
-
-        addMenuButton(controls,"GJ_updateBtn_001.png",
-                      {screen.width-22.f,22.f},
-                      menu_selector(RoadmapListLayer::onRefresh),"refresh"_spr);
-
-        m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
-        m_countLabel->setAnchorPoint({1.f,1.f});
-        m_countLabel->setPosition({screen.width-7.f,screen.height-3.f});
-        m_countLabel->setScale(.6f);
-        m_countLabel->setID("count"_spr);
-        addChild(m_countLabel);
-
-        m_progressLabel = CCLabelBMFont::create("", "goldFont.fnt");
-        m_progressLabel->setPosition({screen.width / 2.f, screen.height - 14.f});
-        m_progressLabel->setScale(.55f);
-        m_progressLabel->setID("progress-count"_spr);
-        addChild(m_progressLabel, 5);
-        updateProgressLabel();
-
-        m_filterLabel = CCLabelBMFont::create("FILTER: ALL", "goldFont.fnt");
-        m_filterLabel->setScale(.62f);
-        auto filterButton = CCMenuItemSpriteExtra::create(
-            m_filterLabel, this, menu_selector(RoadmapListLayer::onFilter));
-        filterButton->setPosition({screen.width / 2.f, 20.f});
-        filterButton->setID("progress-filter"_spr);
-        controls->addChild(filterButton);
-
-        auto pageSprite = CCSprite::create("GJ_button_02.png");
-        pageSprite->setScale(.7f);
-        m_pageLabel = CCLabelBMFont::create("1","bigFont.fnt");
-        m_pageLabel->setScale(.8f);
-        m_pageLabel->setPosition(pageSprite->getContentSize()/2.f);
-        pageSprite->addChild(m_pageLabel);
-        m_pageButton = CCMenuItemSpriteExtra::create(pageSprite,this,
-                                 menu_selector(RoadmapListLayer::onRefresh));
-        m_pageButton->setPosition({screen.width-22.f,screen.height-40.f});
-        m_pageButton->setID("page"_spr);
-        controls->addChild(m_pageButton);
-
-        m_loading = LoadingCircle::create();
-        m_loading->setParentLayer(this);
-        m_loading->setID("loading"_spr);
-        m_loading->show();
-
+        roadui::rect(m_window, padding, 34, contentWidth, 1, roadui::outline);
+        auto footer = roadui::menu(m_window);
+        m_previous = roadui::button(footer, this, menu_selector(RoadmapListLayer::onPrevious),
+                                    "<", 153, 20, 28, 22);
+        m_next = roadui::button(footer, this, menu_selector(RoadmapListLayer::onNext),
+                                ">", 307, 20, 28, 22);
+        roadui::button(footer, this, menu_selector(RoadmapListLayer::onRefresh),
+                       "REFRESH", 402, 20, 82, 22);
+        m_progress = roadui::label(m_window, "", 70, 20, 100, .28f, roadui::muted);
+        m_pageLabel = roadui::label(m_window, "", width / 2, 20, 116, .27f);
         setKeypadEnabled(true);
         setKeyboardEnabled(true);
-        auto tabs=CCMenu::create();tabs->setPosition({0,0});addChild(tabs,10);
-        const char* names[]={"ROADMAP","STARTPOS","PROGRESSION","BACKUP","RESTORE","SETTINGS"};
-        SEL_MenuHandler actions[]={menu_selector(RoadmapListLayer::onRoadmap),menu_selector(RoadmapListLayer::onStartpos),menu_selector(RoadmapListLayer::onDashboard),menu_selector(RoadmapListLayer::onBackup),menu_selector(RoadmapListLayer::onRestore),menu_selector(RoadmapListLayer::onSettings)};
-        for(int i=0;i<6;i++){auto l=CCLabelBMFont::create(names[i],"goldFont.fnt");l->setScale(.35f);auto b=CCMenuItemSpriteExtra::create(l,this,actions[i]);b->setPosition(i<3?CCPoint{screen.width/2+(i-1)*115.f,40.f}:CCPoint{45.f,115.f-(i-3)*25.f});tabs->addChild(b);}
-        loadPage();
+        syncProgress();
+        rebuildResults();
+        renderRoadmap();
         return true;
     }
 
-    // Render all requested roadmap entries, even when the GD server does
-    // not provide a level. This way the list is never an empty black panel.
-    // Use explicitly-positioned LevelCells rather than a ColumnLayout, since
-    // GenericContentLayer's visibility culling otherwise hides the rows.
-    void renderRows(CCArray* levels, bool finished) {
-        if(m_tab==2)return;
-        if (m_scroll) {
-            m_scroll->removeFromParentAndCleanup(true);
-            m_scroll = nullptr;
-        }
-
-        constexpr float viewHeight = 190.f;
-        constexpr float rowHeight = 90.f;
-        constexpr float viewWidth = 356.f;
-        const size_t begin = m_page * kPageSize;
-        const size_t end = std::min(m_results.size(), begin+kPageSize);
-        const size_t count = end - begin;
-        const float contentHeight = std::max(viewHeight, count*rowHeight);
-
-        m_scroll = ScrollLayer::create({viewWidth,viewHeight});
-        m_scroll->setID("roadmap-scroll"_spr);
-        m_scroll->setPosition({0.f,0.f});
-        m_scroll->m_contentLayer->setContentSize({viewWidth,contentHeight});
-        m_list->addChild(m_scroll,6);
-        size_t actual = 0;
-
-        for(size_t i=begin;i<end;i++) {
-            const auto& wanted=m_roadmap[m_results[i]];
-            const size_t row=i-begin;
-            const float y=contentHeight - rowHeight*(row+1);
-
-            GJGameLevel* level=nullptr;
-            if (levels) {
-                // The result array from getOnlineLevels contains GJGameLevel
-                // objects. A dynamic typeinfo_cast could fail for GD's
-                // non-RTTI classes and filter every result away.
-                for (auto candidate : CCArrayExt<GJGameLevel*>(levels)) {
-                    if(candidate && fmt::to_string(static_cast<int>(candidate->m_levelID)) == wanted.id) {
-                        level=candidate;
-                        break;
-                    }
-                }
-            }
-            if (level) {
-                if(Mod::get()->getSettingValue<bool>("auto-sync-progress")) {
-                    auto& p=training::Store::get().levels[std::stoi(wanted.id)];
-                    p.best=std::max(p.best,std::clamp(level->getNormalPercent(),0,100));
-                    m_completed[m_results[i]]=p.best==100;
-                    training::Store::get().save();updateProgressLabel();
-                }
-                auto cell=LevelCell::create(viewWidth,rowHeight);
-                if (!cell) continue;
-                cell->setContentSize({viewWidth,rowHeight});
-                cell->setAnchorPoint({0.f,0.f});
-                cell->setPosition({0.f,y});
-                cell->loadFromLevel(level);
-
-                // Normal Geometry Dash level cells are usually created inside
-                // a CustomListView/TableView. In our ScrollLayer, their menu
-                // keeps an inappropriate offset: the creator name and VIEW
-                // are drawn BELOW the level card, hidden by the next row.
-                // Give the interactive elements explicit LOCAL coordinates.
-                if (auto menu = cell->m_mainMenu) {
-                    menu->setPosition({0.f,0.f});
-                    if (auto creator = menu->getChildByID("creator-name")) {
-                        creator->setAnchorPoint({0.f,.5f});
-                        creator->setPosition({50.f,53.f});
-                    }
-                    if (auto view = menu->getChildByID("view-button")) {
-                        view->setPosition({viewWidth-43.f,rowHeight*.5f});
-                    }
-                    // Level Thumbnails may add start-position buttons here.
-                    // Keeping the native menu attached to each row lets
-                    // these controls scroll with the respective level.
-                }
-                cell->updateBGColor(static_cast<int>(row));
-                cell->setID(fmt::format("level-{}"_spr,wanted.id));
-                m_scroll->m_contentLayer->addChild(cell,1);
-                addProgressButton(cell, m_results[i]);
-                actual++;
-                continue;
-            }
-
-            // The row remains visible during loading or if an ID was not
-            // returned by the Geometry Dash servers, and can be retried.
-            auto bg=CCLayerColor::create(row%2==0?
-                  ccColor4B{161,88,44,255}:ccColor4B{194,114,62,255},
-                  viewWidth,rowHeight);
-            bg->setPosition({0.f,y});
-            bg->setID(fmt::format("placeholder-{}"_spr,wanted.id));
-            m_scroll->m_contentLayer->addChild(bg);
-            auto label=CCLabelBMFont::create(wanted.name.c_str(),"bigFont.fnt");
-            label->setAnchorPoint({0.f,.5f});
-            label->setScale(.57f);
-            label->setPosition({19.f,58.f});
-            label->limitLabelWidth(330.f,.57f,.25f);
-            bg->addChild(label);
-            auto idLabel=CCLabelBMFont::create(
-                fmt::format("ID {}  |  {}",wanted.id,finished?"LEVEL NOT RECEIVED":"LOADING...").c_str(),
-                "goldFont.fnt");
-            idLabel->setAnchorPoint({0.f,.5f});
-            idLabel->setScale(.38f);
-            idLabel->setPosition({19.f,24.f});
-            idLabel->limitLabelWidth(335.f,.38f,.2f);
-            bg->addChild(idLabel);
-            addProgressButton(bg, m_results[i]);
-        }
-
-        if (!count) {
-            auto empty=CCLabelBMFont::create("NO LEVELS FOUND","bigFont.fnt");
-            empty->setScale(.5f);
-            empty->setPosition({178.f,95.f});
-            m_scroll->m_contentLayer->addChild(empty);
-        }
-        m_scroll->scrollToTop();
-        m_loading->setVisible(!finished && count>0);
-        if(Mod::get()->getSettingValue<bool>("diagnostic-logging")) log::info("Roadmap page {}: requested={} server-returned={} matched={} finished={}",
-            m_page+1,count,levels?levels->count():0,actual,finished);
-        updatePageControls();
+    void onEnter() override {
+        CCLayer::onEnter();
+        syncProgress();
+        rebuildResults();
+        loadPage();
     }
-
-    void loadLevelsFinished(CCArray* levels,const char*,int) override {
-        auto manager=GameLevelManager::get();
-        if(manager->m_levelManagerDelegate==this)
-            manager->m_levelManagerDelegate=nullptr;
-        m_inFlight=false;
-        if(m_reloadPending){m_reloadPending=false;loadPage();return;}
-        renderRows(levels,true);
-    }
-
-    void loadLevelsFailed(const char*,int) override {
-        auto manager=GameLevelManager::get();
-        if(manager->m_levelManagerDelegate==this)
-            manager->m_levelManagerDelegate=nullptr;
-        m_inFlight=false;
-        if(m_reloadPending){m_reloadPending=false;loadPage();return;}
-        renderRows(nullptr,true);
-        FLAlertLayer::create("Loading issue",
-            "The level information could not be fetched. The roadmap remains visible; use Refresh to retry.",
-            "OK")->show();
-    }
-
-    void setupPageInfo(gd::string,const char*) override { updatePageControls(); }
-
-    void keyDown(enumKeyCodes key,double time) override {
-        if (key==KEY_Left || key==CONTROLLER_Left) onPrevious(nullptr);
-        else if (key==KEY_Right || key==CONTROLLER_Right) onNext(nullptr);
-        else if (key==KEY_Enter) onSearch(nullptr);
-        else CCLayer::keyDown(key,time);
-    }
-    void keyBackClicked() override {onBack(nullptr);}
 
     void onExit() override {
-        auto manager=GameLevelManager::get();
-        if(manager->m_levelManagerDelegate==this)manager->m_levelManagerDelegate=nullptr;
-        m_inFlight=false;m_reloadPending=false;
+        stopRequest();
         CCLayer::onExit();
     }
+
+    void loadLevelsFinished(CCArray* levels, const char* key, int) override {
+        if (!m_inFlight || (key && m_requestKey != key)) return;
+        const bool stale = m_requestGeneration != m_generation;
+        cacheLevels(levels);
+        const auto requested = m_requestedIds.size();
+        stopRequest();
+        syncProgress();
+        if (Mod::get()->getSettingValue<bool>("diagnostic-logging"))
+            log::info("[RDoD][Fetch] requested={} returned={} stale={} tab={}",
+                      requested, levels ? levels->count() : 0, stale, m_tab);
+        // Always render the current query/page from cache. Never let an older
+        // response replace a different page or the progression dashboard.
+        rebuildResults();
+        render();
+        if (stale && m_tab == 0) loadPage();
+    }
+
+    void loadLevelsFailed(const char* key, int) override {
+        if (!m_inFlight || (key && m_requestKey != key)) return;
+        const bool stale = m_requestGeneration != m_generation;
+        stopRequest();
+        m_networkMessage = "Level info could not be loaded. Use Refresh to retry.";
+        render();
+        if (stale && m_tab == 0) loadPage();
+    }
+
+    void setupPageInfo(gd::string, const char*) override { updateChrome(); }
+
+    void keyDown(enumKeyCodes key, double time) override {
+        if (key == KEY_Left || key == CONTROLLER_Left) onPrevious(nullptr);
+        else if (key == KEY_Right || key == CONTROLLER_Right) onNext(nullptr);
+        else if (key == KEY_Enter) onSearch(nullptr);
+        else CCLayer::keyDown(key, time);
+    }
+
+    void keyBackClicked() override { onBack(nullptr); }
 
     ~RoadmapListLayer() override {
         auto manager = GameLevelManager::get();
@@ -557,31 +638,38 @@ public:
     }
 };
 
+// The only injected entry point remains the search-filter menu.
 class $modify(RoadmapSearch, LevelSearchLayer) {
     bool init(int type) {
         if (!LevelSearchLayer::init(type)) return false;
-        // Button lives alongside the other search filters just like Integrated Demonlist.
-        auto image=CircleButtonSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
-        image->getTopNode()->setScale(.75f);
-        image->setScale(.8f);
-        auto button=CCMenuItemSpriteExtra::create(image,this,
-                                     menu_selector(RoadmapSearch::openRoadmap));
+        auto sprite = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
+        CCNode* image = nullptr;
+        if (sprite) {
+            auto circle = CircleButtonSprite::create(sprite);
+            circle->setScale(.8f);
+            image = circle;
+        } else {
+            image = CCLabelBMFont::create("ROAD", "bigFont.fnt");
+            image->setScale(.35f);
+        }
+        auto button = CCMenuItemSpriteExtra::create(image, this,
+                             menu_selector(RoadmapSearch::openRoadmap));
         button->setID("roadmap-button"_spr);
-        if (auto menu=getChildByID("other-filter-menu")) {
+        if (auto menu = getChildByID("other-filter-menu")) {
             menu->addChild(button);
             menu->updateLayout();
         } else {
-            auto fallback=CCMenu::create();
-            auto screen=CCDirector::get()->getWinSize();
-            fallback->setPosition({screen.width-28.f,screen.height*.35f});
-            fallback->addChild(button);
-            addChild(fallback, 50);
+            auto menu = roadui::menu(this);
+            const auto screen = CCDirector::get()->getWinSize();
+            button->setPosition({screen.width - 28.f, screen.height * .35f});
+            menu->addChild(button);
         }
         return true;
     }
+
     void openRoadmap(CCObject*) {
         CCDirector::get()->pushScene(
-            CCTransitionFade::create(.5f,RoadmapListLayer::scene()));
+            CCTransitionFade::create(.3f, RoadmapListLayer::scene()));
     }
 };
 
