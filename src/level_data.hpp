@@ -44,7 +44,7 @@ Evangelion|62151546
 Aftermath|25610878
 Bloodbath|10565740
 Sakupen Hell|23262780
-Blade of Justice|35448603
+Shardscapes|79997992
 Infernal Abyss|27379546
 Phobos|19759411
 Auditory Breaker|51791710
