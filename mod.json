@@ -5,9 +5,9 @@
   },
   "id": "gayan.road-of-doom",
   "name": "Road of Doom and Despair",
-  "version": "v0.5.0",
+  "version": "v0.5.1",
   "developer": "Gayan",
-  "description": "Road of Doom and Despair: la roadmap de 75 niveaux dans le navigateur natif de Geometry Dash.",
+  "description": "Roadmap de 75 niveaux affichés en LevelCell natives : correctif du crash de la v0.5.0.",
   "tags": [
     "interface",
     "utility"
