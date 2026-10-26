@@ -1,18 +1,51 @@
 name: Build Windows mod
 on:
   push:
+    branches: [main, 'beta/**']
+  pull_request:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Roadmap and metadata
+        run: python3 scripts/check_roadmap.py
+      - name: Local save validation
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/training_data.cpp -o training-data-tests
+          ./training-data-tests
+      - name: UI layout bounds
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/layout.cpp -o layout-tests
+          ./layout-tests
+      - name: Request routing and startpos searches
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/request_routing.cpp -o request-routing-tests
+          ./request-routing-tests
+          g++ -std=c++20 -Wall -Wextra -Werror tests/search_query.cpp -o search-query-tests
+          ./search-query-tests
+      - name: New session data and automatic snapshots
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/extra_data.cpp -o extra-data-tests
+          ./extra-data-tests
+          g++ -std=c++20 -Wall -Wextra -Werror tests/backup_files.cpp -o backup-file-tests
+          ./backup-file-tests
+          g++ -std=c++20 -Wall -Wextra -Werror tests/stats_view.cpp -o stats-view-tests
+          ./stats-view-tests
   build:
+    needs: checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Validate roadmap and mod metadata
+        run: python scripts/check_roadmap.py
       - name: Get real Nullscapes screenshot as PNG
         run: |
           python -m pip install pillow
@@ -26,3 +59,4 @@ jobs:
         with:
           name: Road-of-Doom-Windows
           path: ${{ steps.build.outputs.build-output }}/*.geode
+
