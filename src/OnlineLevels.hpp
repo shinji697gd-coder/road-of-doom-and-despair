@@ -10,18 +10,26 @@ namespace roadnet {
 using namespace geode::prelude;
 
 struct LevelReply final : LevelManagerDelegate {
+    std::string key;
     Ref<CCArray> levels;
     bool ready = false;
     bool success = false;
 
-    void loadLevelsFinished(CCArray* value, char const*) override {
+    explicit LevelReply(std::string value) : key(std::move(value)) {}
+
+    void loadLevelsFinished(CCArray* value, char const* responseKey) override {
+        if (responseKey && key != responseKey) return;
         levels = value;
         success = ready = true;
     }
     void loadLevelsFinished(CCArray* value, char const* key, int) override {
         loadLevelsFinished(value, key);
     }
-    void loadLevelsFailed(char const*) override { ready = true; success = false; }
+    void loadLevelsFailed(char const* responseKey) override {
+        if (responseKey && key != responseKey) return;
+        ready = true;
+        success = false;
+    }
     void loadLevelsFailed(char const* key, int) override { loadLevelsFailed(key); }
 };
 
@@ -39,8 +47,10 @@ inline bool fetch(GJSearchObject* search, PendingReplies<LevelReply>::Callback c
         }
         return false;
     }
-    auto reply = std::make_shared<LevelReply>();
+    auto reply = std::make_shared<LevelReply>(key);
     replies.attach(key, reply, std::move(callback));
+    if (Mod::get()->getSettingValue<bool>("diagnostic-logging"))
+        log::info("[RDoD][Fetch] start key={}", key);
     {
         DelegateScope<LevelManagerDelegate> scope(manager->m_levelManagerDelegate, reply.get());
         manager->getOnlineLevels(search);
@@ -65,6 +75,9 @@ class $modify(RoadmapLevelResponses, GameLevelManager) {
             roadnet::DelegateScope<LevelManagerDelegate> scope(m_levelManagerDelegate, reply.get());
             GameLevelManager::onGetOnlineLevelsCompleted(response, tag);
         }
+        if (geode::Mod::get()->getSettingValue<bool>("diagnostic-logging"))
+            geode::log::info("[RDoD][Fetch] reply key={} ready={} success={}",
+                            key, reply->ready, reply->success);
         if (reply->ready) roadnet::replies.complete(key, reply);
     }
 };

@@ -364,6 +364,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     void onRequestRetry(float) {
         if (!m_inFlight || !m_requestSearch) return;
         const std::string key = m_requestKey;
+        const auto generation = m_requestGeneration;
         if (auto cached = GameLevelManager::get()->getStoredOnlineLevels(key.c_str())) {
             loadLevelsFinished(cached, key.c_str(), 0);
             return;
@@ -374,7 +375,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             if (!self || !self->isRunning()) return;
             if (reply.success) self->loadLevelsFinished(reply.levels.data(), key.c_str(), 0);
             else self->loadLevelsFailed(key.c_str(), 0);
-        })) {
+        }) && m_inFlight && m_requestKey == key && m_requestGeneration == generation) {
             unschedule(schedule_selector(RoadmapListLayer::onRequestRetry));
         }
     }
