@@ -28,6 +28,12 @@ jobs:
           ./request-routing-tests
           g++ -std=c++20 -Wall -Wextra -Werror tests/search_query.cpp -o search-query-tests
           ./search-query-tests
+      - name: New session data and automatic snapshots
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/extra_data.cpp -o extra-data-tests
+          ./extra-data-tests
+          g++ -std=c++20 -Wall -Wextra -Werror tests/backup_files.cpp -o backup-file-tests
+          ./backup-file-tests
   build:
     needs: checks
     runs-on: windows-latest

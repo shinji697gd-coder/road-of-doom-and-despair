@@ -15,6 +15,7 @@
 #include "ui/ToolsPopup.hpp"
 #include "OnlineLevels.hpp"
 #include "SearchQuery.hpp"
+#include "SessionStats.hpp"
 
 using namespace geode::prelude;
 
@@ -78,6 +79,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     CCMenuItemSpriteExtra* m_filter = nullptr;
     CCMenuItemSpriteExtra* m_previous = nullptr;
     CCMenuItemSpriteExtra* m_next = nullptr;
+    CCMenuItemSpriteExtra* m_statsButton = nullptr;
 
     static constexpr size_t pageSize = 10;
 
@@ -93,6 +95,8 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         auto& store = training::Store::get();
         auto manager = GameLevelManager::get();
         bool changed = false;
+        auto& extras = training::Extras::get();
+        bool extraChanged = false;
         for (auto const& entry : m_roadmap) {
             int best = store.levels[entry.id].best;
             if (auto saved = manager->getSavedLevel(entry.id))
@@ -103,8 +107,11 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
                 store.levels[entry.id].best = best;
                 changed = true;
             }
+            if (extras.writable)
+                extraChanged |= extras.observeBest(entry.id, best, training::now());
         }
         if (changed) store.save();
+        if (extraChanged) extras.save();
     }
 
     void rebuildResults(bool resetPage = false) {
@@ -134,6 +141,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             roadui::updateButton(m_tabs[i], names[i], m_tab == i);
         m_toolbar->setVisible(m_tab != 2);
         m_dashboardHeading->setVisible(m_tab == 2);
+        m_statsButton->setVisible(m_tab == 2);
         if (m_tab != 2) {
             roadui::updateButton(m_filter, filters[view().filter]);
         }
@@ -192,9 +200,15 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         const auto index = static_cast<size_t>(sender->getTag());
         if (index >= m_roadmap.size()) return;
         const auto& entry = m_roadmap[index];
-        const auto query = m_tab == 1 ? road::startposQuery(entry.name) : std::to_string(entry.id);
         // Building the native browser can start its request before our onExit.
         stopRequest();
+        if (m_tab == 1) {
+            const int copy = training::Extras::get().levels[entry.id].copy;
+            if (copy) training::OpenCopyPopup::open(copy);
+            else training::searchCopies(entry.id, entry.name);
+            return;
+        }
+        const auto query = std::to_string(entry.id);
         auto search = GJSearchObject::create(SearchType::Search, query);
         CCDirector::get()->pushScene(
             CCTransitionFade::create(.3f, LevelBrowserLayer::scene(search)));
@@ -212,7 +226,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             done += p.best == 100;
             favorites += p.favorite;
             runs += static_cast<int>(p.runs.size());
-            presets += static_cast<int>(p.presets.size());
+            presets += training::Extras::get().levels[entry.id].copy != 0;
             if (entry.id == store.goal) { goal = entry.name; goalBest = p.best; }
         }
         auto complete = roadui::panel(m_content, 0, 103, 138, 73);
@@ -221,13 +235,15 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         auto goalCard = roadui::panel(m_content, 146, 103, 286, 73);
         roadui::label(goalCard, "OBJECTIF ACTUEL", 12, 55, 260, .27f, roadui::muted, true);
         roadui::label(goalCard, goal, 12, 31, 260, .44f, roadui::text, true);
-        roadui::label(goalCard, store.goal ? fmt::format("Record normal : {}%", goalBest) :
+        const auto precise = store.goal && training::Extras::get().levels[store.goal].goalKind;
+        roadui::label(goalCard, precise ? training::goalCaption(store.goal) :
+                      store.goal ? fmt::format("Record normal : {}%", goalBest) :
                       "Choisis-le dans l'apercu d'un niveau.",
                       12, 12, 260, .24f, roadui::muted, true);
         roadui::rect(m_content, 0, 85, contentWidth, 8, roadui::surface);
         roadui::rect(m_content, 0, 85, contentWidth * done / 75.f, 8, roadui::selectedFill);
 
-        const char* labels[] = {"FAVORIS", "RUNS", "STARTPOS"};
+        const char* labels[] = {"FAVORIS", "RUNS", "COPIES LIEES"};
         const int values[] = {favorites, runs, presets};
         for (int i = 0; i < 3; ++i) {
             auto card = roadui::panel(m_content, i * 146.f, 10, 140, 63);
@@ -506,6 +522,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             if (self->isRunning()) self->refreshLocal();
         })) popup->show();
     }
+    void onStats(CCObject*) { roadui::StatsPopup::open(); }
 
     void onBack(CCObject*) {
         CCDirector::get()->popSceneWithTransition(.3f, kPopTransitionFade);
@@ -569,8 +586,11 @@ public:
         m_filter = roadui::button(searchActions, this, menu_selector(RoadmapListLayer::onFilter),
                                   "TOUS", 380, 12, 96, 24);
         m_dashboardHeading = roadui::label(m_window, "TON PARCOURS VERS NULLSCAPES",
-                                          width / 2, 230, contentWidth, .3f, roadui::muted);
+                                          padding, 230, 306, .28f, roadui::muted, true);
         m_dashboardHeading->setVisible(false);
+        m_statsButton = roadui::button(header, this, menu_selector(RoadmapListLayer::onStats),
+                                      "STATS", 394, 230, 100, 24);
+        m_statsButton->setVisible(false);
 
         m_content = CCNode::create();
         m_content->setPosition({padding, contentBottom});

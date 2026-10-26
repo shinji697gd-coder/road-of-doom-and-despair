@@ -1,40 +1,64 @@
-# Validation beta.4
+# Validation bêta.5
 
-Corrections issues de la vidéo MedalTVGeometryDash20261025165726788.mp4 : pages suivantes bloquées sur « Une autre requete est en cours » et onglet STARTPOS remplacé par le raccourci de recherche demandé. L'interface française, les 75 niveaux et le format de sauvegarde sont conservés.
+## Automatisé
 
-## Contrôles automatisés
+- 75 niveaux et IDs uniques, ordre critique préservé, Nullscapes dernier.
+- Ancien format RDOD 1 et sauvegardes des bêta précédentes inchangés.
+- Nouveau format : aller-retour, séparation copie/original, unicité des associations, rejet non destructif de schémas inconnus, mauvais IDs, objectifs invalides et texte superflu.
+- Premier record observé sans date historique inventée ; augmentation seulement ; objectif de run couvert et non couvert.
+- Compteur : un seul départ par tentative, deux callbacks de mort/reset sans double compte, practice séparé, pause et longue interruption exclues.
+- Snapshot : dix versions conservées, doublon de nom refusé, nom invalide refusé, fichier personnel non supprimé.
+- Tests existants de dimensions, routage réseau et recherches STARTPOS.
+- Compilation Windows x64 avec Geode 5.11.2 pour GD 2.2081.
 
-- Parcours : 75 identifiants uniques, ordre critique inchangé, Nullscapes dernier.
-- Sauvegardes C++ : aller-retour, schéma invalide, limites, doublons, runs invalides et rejet sans écrasement.
-- Dimensions : séparation titre / onglets / recherche / contenu / pied de page aux quatre tailles d'écran existantes.
-- Routage : délégué précédent non nul, changement de délégué par un autre mod, réponse annulée, réponses hors ordre, ancienne réponse après remplacement et nouvelle demande depuis un callback.
-- Recherche : Acu, Forest Temple tronqué comme dans la vidéo et nom long.
-- Compilation et paquet Windows avec Geode 5.11.2 dans GitHub Actions.
+## À tester dans GD 2.2081
 
-## À valider dans Geometry Dash 2.2081
+L'environnement de build ne permet pas d'exécuter le jeu. Ne pas considérer les hooks ou les nouveaux écrans comme validés en jeu après une simple compilation.
 
-Ces tests ne sont pas exécutables dans cet environnement. Ne pas fusionner dans main avant validation.
+### Non-régression
 
-- Parcourir les huit pages de PARCOURS avec les mêmes mods que dans la vidéo. Les cellules et VIEW doivent charger après la page 1 sans le message de blocage.
-- Ouvrir STARTPOS sans aucun repère enregistré : les 75 niveaux doivent être proposés avec les mêmes cellules natives que PARCOURS.
-- STARTPOS → Forest Temple → VIEW : ouvrir les résultats natifs pour « Forest Temple startp », avec les copies d'entraînement. Ne pas ouvrir directement le niveau original ou sélectionner automatiquement une copie.
-- Refaire le test avec Acu et un nom long ; la disponibilité et le nommage des copies dépendent des niveaux publiés sur GD.
-- Dans PARCOURS, VIEW d'une cellule chargée ouvre toujours la fiche du bon niveau original.
-- Revenir des résultats STARTPOS, parcourir une autre page, utiliser VIEW puis changer d'onglet. La recherche, le filtre et la page restent propres à chaque vue.
-- Pendant le chargement ou hors connexion, VIEW reste présent : recherche de copies dans STARTPOS, recherche par ID dans PARCOURS.
-- Changer rapidement de page, chercher ou filtrer pendant une requête ; une réponse ancienne ne doit pas remplacer la sélection actuelle ou PROGRESSION. La page courante doit ensuite charger automatiquement.
-- Fermer le mod pendant une requête, lancer une recherche native différente, puis attendre la réponse précédente. Elle ne doit pas remplacer les résultats natifs ni laisser de pointeur vers le menu fermé.
-- Cliquer plusieurs fois sur ACTUALISER, tester une erreur réseau et le délai de 15 secondes, puis réessayer après reconnexion.
-- Ouvrir et fermer dix fois ; vérifier les textures, miniatures, contrôles et le bouton i sans chevauchement.
-- Ajouter notes, favori, objectif, run et repère manuel ; redémarrer GD et vérifier la conservation des anciennes sauvegardes.
-- Exporter, annuler une restauration, restaurer, rejeter un fichier corrompu et vérifier le fichier de secours.
-- Confirmer que la progression native est seulement lue et que le meilleur pourcentage local ne diminue pas.
-- Vérifier Integrated Demonlist, BetterInfo, Happy Textures, Level Thumbnails et le mod de startpos visible dans la vidéo.
+- Ouvrir / fermer dix fois et parcourir les huit pages avec les mods de la vidéo.
+- PARCOURS conserve ses cellules et VIEW natifs. STARTPOS sans copie conserve la recherche native validée en bêta.4.
+- Tester navigation rapide, erreurs réseau, délai de 15 secondes, fermeture pendant chargement et retour depuis les résultats.
+- Les onglets ne recouvrent ni la liste ni les boutons, aux petites résolutions et avec les textures / miniatures installées.
 
-## Fonctions du rapport restant à développer
+### Copies préférées
 
-- Les repères manuels restent des noms / pourcentages. La capture native et le moteur TEST isolé ne sont pas implémentés. Le nouvel onglet STARTPOS utilise les recherches GD demandées par l'utilisateur.
-- Statistiques automatiques de session, synchronisation en arrière-plan et dates de runs.
-- Le routage est limité aux clés de requêtes RDoD ; il ne remplace pas un broker réseau général entre tous les mods. Les conflits de mods doivent être validés en jeu.
-- Les anciennes coches DONE restent sous leurs clés historiques et ne sont pas comptées comme des victoires GD vérifiées.
-- Le téléchargement existant de la capture pendant le build reste en place ; une capture personnelle fournie doit le remplacer.
+- STARTPOS → Forest Temple → VIEW → copie → Voir seulement : aucune association.
+- Même parcours → Choisir : revenir puis VIEW ouvre directement la fiche de cette copie.
+- i → STARTPOS : vérifier l'ID, le changer, le retirer, relancer la recherche et redémarrer GD.
+- Un ID original ou une copie déjà liée ailleurs est refusé. Un ID inconnu / supprimé échoue proprement au chargement ; l'utilisateur peut le remplacer.
+- Les recherches natives ouvertes hors RDoD n'affichent pas le choix de copie.
+- REPERES MANUELS conserve les anciens noms / pourcentages, avec ajout, modification et suppression.
+
+### Sessions et historique
+
+- Faire un nombre connu d'essais normaux sur un original, quitter et comparer aux stats.
+- Alterner normal, practice et startpos/test ; vérifier les colonnes et l'absence de double compte après restart, mort dual et changement de mode.
+- Laisser le jeu en pause une minute : ce temps ne doit pas être ajouté ; vérifier aussi pause par perte de focus, resume, completion et abandon d'une tentative vivante.
+- Jouer la copie liée : elle apparaît dans COPIES et n'augmente pas les stats de l'original dans ORIGINAL.
+- Tester un niveau hors parcours, un replay, l'éditeur et un platformer : aucun suivi.
+- Vérifier les comptes avec FPS élevé, speedhack, noclip et le mod de startpos installé ; ce suivi n'est pas une validation anti-triche.
+- Faire un nouveau record normal puis revenir : une observation datée apparaît, pas de régression après un essai inférieur. Les anciens records ne reçoivent pas de fausse date.
+- Désactiver Stats automatiques de session, rouvrir un niveau et confirmer l'arrêt du suivi.
+- Vérifier la sauvegarde après pause / quitter et après crash simulé (perte possible de moins de 30 secondes non sauvegardées).
+
+### Objectifs
+
+- Choisir 70 % en normal ; il est atteint si le meilleur normal lu atteint 70.
+- Choisir 40–100 ; ajouter 41–100 ne suffit pas, 40–100 ou 39–100 suffit.
+- Les runs sont manuels : ne pas annoncer de reconnaissance automatique d'un 40–100 joué.
+- Modifier / retirer l'objectif et redémarrer ; le choix du niveau objectif global reste indépendant.
+
+### Sauvegardes
+
+- Installer sur la bêta.4 : notes, favoris, runs, repères et progression restent présents.
+- Exporter, restaurer l'export complet, annuler une restauration et importer un ancien export schéma 1 (nouvelles données conservées).
+- Vérifier les versions automatiques après modifications puis après dix minutes de jeu ; restaurer une ancienne date après confirmation.
+- Rejeter des données tronquées ou corrompues sans modifier les données actuelles.
+- Vérifier le fichier unique de secours avant chaque restauration, y compris avec une valeur Geode initialement illisible.
+- Une erreur d'écriture de la copie de secours annule l'import. Les meilleurs normaux ne diminuent jamais.
+
+## Toujours hors périmètre
+
+Connexion à ChatGPT, suivi externe, capture native / moteur TEST isolé, détection automatique des segments de run, récupération rétroactive des anciens temps et tentatives, broker général entre tous les mods et remplacement de la capture téléchargée pendant le build.

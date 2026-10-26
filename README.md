@@ -1,42 +1,47 @@
-# The Road of Doom and Despair — bêta.4
+# The Road of Doom and Despair — bêta.5
 
-Mod pour Windows, Geometry Dash 2.2081 et Geode 5.11.2.
+Windows x64, Geometry Dash 2.2081, Geode 5.11.2. Interface française, termes de jeu et noms des 75 niveaux conservés.
 
-L'interface est en français. Les termes de jeu comme startpos, runs, grind et VIEW ainsi que les noms des niveaux sont conservés. Les libellés en jeu utilisent des caractères simples compatibles avec la police de GD.
+## Copie startpos préférée
 
-Les 75 niveaux du parcours et leurs boutons VIEW natifs sont conservés. Les onglets PARCOURS, STARTPOS et PROGRESSION se trouvent sous le titre. La pagination et le bouton ACTUALISER sont en bas de la fenêtre.
+Dans STARTPOS, VIEW ouvre toujours la recherche GD tant qu'aucune copie n'est choisie. Dans ces résultats uniquement, VIEW propose « Voir seulement » ou « Choisir ». Choisir associe cette copie au niveau du parcours puis ouvre sa fiche native. Les prochains VIEW de STARTPOS ouvrent directement cette copie après chargement de ses informations.
 
-**STARTPOS** affiche la même liste de 75 niveaux que PARCOURS, avec ses propres recherche, filtre et page. Son bouton **VIEW** ouvre directement les résultats de recherche GD « nom du niveau + startpos ». La recherche respecte la limite de 20 caractères des noms GD : Forest Temple devient « Forest Temple startp », comme dans la vidéo de test. Tu choisis ensuite la copie d'entraînement souhaitée dans les résultats natifs. Aucun repère local n'est nécessaire.
+Le bouton i → STARTPOS permet aussi de saisir l'ID d'une copie, de la retirer ou de relancer la recherche. Un original du parcours ne peut pas être enregistré comme copie ; une copie ne peut pas appartenir à deux originaux. Les anciens noms / pourcentages restent dans REPERES MANUELS. Une recherche de nom reste limitée à 20 caractères comme dans GD.
 
-Le bouton **i** à côté d'un niveau ouvre sa fiche :
+La disponibilité d'une copie dépend de GD. En cas d'ID supprimé ou d'erreur réseau, le chargement affiche une erreur après 15 secondes ; retire ou remplace alors son ID. « Voir seulement » laisse VIEW en recherche.
 
-- **APERCU** : record normal, statut, favori, objectif et notes. Les notes sont enregistrées en changeant de page ou en fermant la fiche.
-- **RUNS** : ajoute un segment, sélectionne une ligne pour le modifier ou supprime le run sélectionné.
-- **STARTPOS** : enregistre un nom et un pourcentage de départ. Sélectionne une ligne pour la modifier. NOUVEAU vide le formulaire et SUPPRIMER retire le startpos sélectionné.
+## Stats de session et historique
 
-Les repères manuels déjà enregistrés restent accessibles par le bouton **i**, dans la fiche STARTPOS. Ils contiennent un nom et un pourcentage et ne lancent pas de startpos.
+PROGRESSION → STATS affiche toutes les sessions. i → APERCU → STATS limite les données à un niveau.
 
-Le chargement des pages ne bloque plus sur la simple présence d'un autre délégué réseau. Les réponses RDoD sont acheminées par leur clé, sans garder le délégué global pendant l'attente. Une réponse reçue après fermeture est consommée sans rouvrir le menu. Si une requête native identique existe déjà, le mod attend son cache avec un délai maximal de 15 secondes. **ACTUALISER** invalide le résultat natif de la page concernée ; un bouton VIEW de secours reste disponible pendant le chargement ou en cas d'erreur.
+- ORIGINAL / COPIES sépare les sources par ID. La copie doit être explicitement liée avant de jouer ; sa progression ne devient jamais celle de l'original.
+- Les essais normaux et les essais practice/test/startpos sont séparés. Une tentative commence au premier tick actif, pas à chaque appel de reset ou de mort.
+- Le temps est du temps actif réel, mesuré avec une horloge monotone. Pauses et interruptions de plus d'une seconde ne sont pas ajoutées. Le suivi exclut éditeur, replays et platformer.
+- Le suivi débute avec cette version : aucun ancien temps de jeu ni anciennes tentatives ne sont reconstitués. Les 500 sessions les plus récentes sont conservées.
+- RECORDS affiche les augmentations du meilleur pourcentage normal observées après l'activation du suivi. Le premier pourcentage sert de référence sans date inventée. Une date est une date d'observation sur cet appareil, pas une preuve de la date exacte du record.
+- Les stats sont sauvegardées au début, après la première tentative, toutes les 30 secondes, à la pause, à la fin et en quittant. Un arrêt brutal peut perdre la dernière tranche non sauvegardée.
 
-**OUTILS** regroupe l'export, la restauration et les paramètres du mod. L'export crée training-backup.json dans le dossier de sauvegarde du mod. La restauration valide le fichier, demande confirmation et conserve une copie de secours des données actuelles. Le mode sécurisé est réservé au futur moteur expérimental ; cette version n'ajoute aucun hook expérimental de gameplay.
+Les hooks lisent les événements de jeu ; ils n'écrivent ni progression, ni physique, ni compteurs de tentatives de GD. Ce suivi n'est pas un système anti-triche et les interactions avec les autres mods nécessitent une validation en jeu. Le réglage Stats automatiques de session désactive le suivi ; changer ce réglage prend entièrement effet au prochain lancement de niveau.
 
-La progression est lue depuis les niveaux sauvegardés de GD et les objets de niveau chargés. Le meilleur pourcentage local ne diminue pas. Les anciennes coches manuelles DONE restent conservées mais ne comptent pas comme des victoires natives. La recherche, le filtre et la page sont conservés séparément pour chaque vue.
+## Objectifs précis
 
-## Installation et sauvegardes
+i → APERCU → OBJECTIF % permet de viser un record normal entier (ex. 70 %) ou un run (ex. 40–100). Le choix du niveau objectif global reste indépendant.
 
-Remplace l'ancien fichier .geode par la bêta.4. Les sauvegardes des bêta.1, bêta.2 et bêta.3 restent compatibles : aucun changement du format ni des identifiants de stockage.
+Le record se valide à partir de la progression normale lue. Un objectif de run se valide quand tu ajoutes un run qui le couvre dans RUNS, ou s'il était déjà enregistré. Les runs restent saisis manuellement dans cette bêta ; aucune détection automatique des segments n'est annoncée.
+
+## Sauvegardes
+
+Les sauvegardes existantes training-v1 restent inchangées. Copies, objectifs précis, sessions et historique utilisent une seconde clé indépendante training-extra-v1. Une donnée illisible est conservée et sa réécriture est bloquée.
+
+Les sauvegardes automatiques conservent jusqu'à 10 versions complètes dans auto-backups, avant modification puis au plus une nouvelle version toutes les 10 minutes lorsqu'une écriture a lieu. Elles n'effectuent aucun envoi réseau. OUTILS → SAUVEGARDES AUTO permet de choisir une date, avec confirmation avant restauration.
+
+OUTILS permet toujours d'exporter training-backup.json et de restaurer ce fichier. Les exports de cette version utilisent une enveloppe complète de schéma 2. Les anciens exports de schéma 1 restent importables ; ils remplacent uniquement les anciens champs et conservent les nouvelles données. Chaque restauration crée un fichier training-before-import-[horodatage].json contenant les deux données précédentes, même si une valeur était illisible. Le meilleur pourcentage normal ne diminue pas.
 
 ## Vérification
 
-    python scripts/check_roadmap.py
-    c++ -std=c++20 tests/training_data.cpp -o training_data && ./training_data
-    c++ -std=c++20 tests/layout.cpp -o layout_tests && ./layout_tests
-    c++ -std=c++20 tests/request_routing.cpp -o request_tests && ./request_tests
-    c++ -std=c++20 tests/search_query.cpp -o search_tests && ./search_tests
+Les tests de parcours, données, dimensions, routage, recherches, sessions et rotation des fichiers tournent dans GitHub Actions avant la compilation Windows. Ils ne remplacent pas les tests dans GD avec les textures et autres mods installés.
 
-Les contrôles de dimensions vérifient la séparation des zones d'interface et leur adaptation à la taille d'écran. Ils ne remplacent pas un test de rendu dans GD avec les mods et textures installés. La compilation Windows s'exécute dans GitHub Actions.
-
-Voir les [tests en jeu et fonctions restantes](docs/BETA_TEST_MATRIX.md) et le [format de sauvegarde](docs/SAVE_SCHEMA.md). Ne pas fusionner dans main avant validation en jeu.
+Voir [la validation en jeu](docs/BETA_TEST_MATRIX.md) et [les formats de sauvegarde](docs/SAVE_SCHEMA.md). Développement sur beta/v1.0.0-beta.1 ; aucune fusion dans main avant validation de cette nouvelle bêta.
 
 ## Crédits
 

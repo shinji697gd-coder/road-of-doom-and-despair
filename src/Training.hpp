@@ -4,37 +4,24 @@
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <functional>
-#include "TrainingData.hpp"
+#include "Persistence.hpp"
 #include "ui/Widgets.hpp"
+#include "LevelNavigation.hpp"
+#include "ui/StatsPopup.hpp"
+#include "ui/GoalPopup.hpp"
 
 namespace training {
 using namespace geode::prelude;
-
-inline void Store::save() {
-    if (writable) Mod::get()->setSavedValue("training-v1", encode());
-}
-
-inline Store& Store::get() {
-    static Store store;
-    static bool loaded = false;
-    if (!loaded) {
-        loaded = true;
-        auto raw = Mod::get()->getSavedValue<std::string>("training-v1", "");
-        if (!raw.empty() && !store.decode(raw)) {
-            store.writable = false;
-            log::error("[RDoD] Invalid training save: writing disabled, original retained");
-        }
-    }
-    return store;
-}
 
 // A page displays one task. Inputs and record lists are never drawn over the
 // level browser, and native game progress is never edited from this popup.
 class Detail final : public Popup {
     int m_id = 0;
+    std::string m_levelName;
     int m_tab = 0;
     int m_selectedRun = -1;
     int m_selectedPreset = -1;
+    bool m_markers = false;
     CCNode* m_body = nullptr;
     CCLabelBMFont* m_notice = nullptr;
     CCMenuItemSpriteExtra* m_tabs[3]{};
@@ -42,6 +29,7 @@ class Detail final : public Popup {
     TextInput* m_name = nullptr;
     TextInput* m_from = nullptr;
     TextInput* m_to = nullptr;
+    TextInput* m_copyId = nullptr;
     std::function<void()> m_changed;
 
     Progress& progress() { return Store::get().levels[m_id]; }
@@ -107,7 +95,17 @@ class Detail final : public Popup {
     void onTab(CCObject* sender) {
         saveNotes();
         m_tab = sender->getTag();
+        m_markers = false;
         buildPage();
+    }
+
+    void onStats(CCObject*) { roadui::StatsPopup::open(m_id); }
+    void onPreciseGoal(CCObject*) {
+        saveNotes();
+        WeakRef<Detail> weak(this);
+        roadui::GoalPopup::open(m_id, [weak] {
+            if (auto self = weak.lock(); self && self->isRunning()) self->buildPage();
+        });
     }
 
     ScrollLayer* recordList(float bottom, float height, size_t count) {
@@ -147,8 +145,11 @@ class Detail final : public Popup {
         m_notes->setString(p.notes);
         roadui::button(options, this, menu_selector(Detail::onSaveNotes),
                        "ENREGISTRER", 80, 66, 128, 26, true);
-        roadui::label(m_body, "Record lu dans Geometry Dash.",
-                      279, 66, 242, .25f, roadui::muted);
+        roadui::button(options, this, menu_selector(Detail::onStats),
+                       "STATS", 211, 66, 112, 26);
+        roadui::button(options, this, menu_selector(Detail::onPreciseGoal),
+                       "OBJECTIF %", 346, 66, 112, 26);
+        roadui::label(m_body, goalCaption(m_id), 210, 42, 388, .25f, roadui::muted);
     }
 
     void onSelectRun(CCObject* sender) {
@@ -180,6 +181,10 @@ class Detail final : public Popup {
             runs.emplace_back(from, to);
         }
         Store::get().save();
+        if (Extras::get().writable) {
+            Extras::get().observeRun(m_id, from, to);
+            Extras::get().save();
+        }
         m_selectedRun = -1;
         buildPage();
         notice("Run enregistre.");
@@ -284,7 +289,7 @@ class Detail final : public Popup {
         notice("Startpos supprime.");
     }
 
-    void buildStartpos() {
+    void buildMarkers() {
         auto& presets = progress().presets;
         const bool editing = m_selectedPreset >= 0 && static_cast<size_t>(m_selectedPreset) < presets.size();
         roadui::label(m_body, "NOM DU STARTPOS", 16, 198, 230, .26f, roadui::muted, true);
@@ -322,12 +327,58 @@ class Detail final : public Popup {
             row->setTag(static_cast<int>(i));
         }
         list->scrollToTop();
-        roadui::label(m_body, "Reperes uniquement : lancement par startpos indisponible.",
-                      210, 43, 388, .23f, roadui::muted);
+        roadui::button(actions, this, menu_selector(Detail::onCopyPage),
+                       "RETOUR A LA COPIE", 210, 43, 244, 18);
+    }
+
+    void onCopyPage(CCObject*) { m_markers = !m_markers; buildPage(); }
+    void onSaveCopy(CCObject*) {
+        if (!Extras::get().writable) { notice("Nouvelles donnees en lecture seule.", true); return; }
+        int copy = 0;
+        std::istringstream input(m_copyId->getString());
+        const bool parsed = static_cast<bool>(input >> copy);
+        input >> std::ws;
+        if (!parsed || !input.eof() || copy <= 0 || !Extras::get().setCopy(m_id, copy)) {
+            notice("ID invalide, niveau original ou copie deja associee.", true);
+            return;
+        }
+        Extras::get().save();
+        buildPage();
+        notice("Copie preferee enregistree.");
+    }
+    void onRemoveCopy(CCObject*) {
+        if (!Extras::get().writable) return;
+        Extras::get().setCopy(m_id, 0);
+        Extras::get().save();
+        buildPage();
+    }
+    void onSearchCopy(CCObject*) {
+        searchCopies(m_id, m_levelName);
+    }
+    void buildStartpos() {
+        if (m_markers) { buildMarkers(); return; }
+        auto& level = Extras::get().levels[m_id];
+        roadui::label(m_body, "TA COPIE D'ENTRAINEMENT", 210, 198, 388, .31f);
+        m_copyId = roadui::input(m_body, 157, 166, 282, "ID de la copie startpos", CommonFilter::Uint);
+        m_copyId->setMaxCharCount(10);
+        if (level.copy) m_copyId->setString(std::to_string(level.copy));
+        auto actions = roadui::menu(m_body);
+        roadui::button(actions, this, menu_selector(Detail::onSaveCopy),
+                       "CHOISIR", 360, 166, 88, 24, true);
+        roadui::label(m_body, level.copy ? fmt::format("VIEW ouvrira directement la copie {}.", level.copy) :
+                      "Recherche une copie puis choisis-la depuis ses resultats.",
+                      210, 132, 388, .26f, roadui::muted);
+        roadui::button(actions, this, menu_selector(Detail::onSearchCopy),
+                       "RECHERCHER DANS GD", 113, 100, 194, 28, true);
+        roadui::button(actions, this, menu_selector(Detail::onRemoveCopy),
+                       "RETIRER LA COPIE", 307, 100, 194, 28);
+        roadui::button(actions, this, menu_selector(Detail::onCopyPage),
+                       "REPERES MANUELS", 210, 58, 240, 24);
+        roadui::label(m_body, "Original et copie ont des stats separees.", 210, 34, 388, .24f, roadui::muted);
     }
 
     void buildPage() {
-        m_notes = m_name = m_from = m_to = nullptr;
+        m_notes = m_name = m_from = m_to = m_copyId = nullptr;
         m_body->removeAllChildrenWithCleanup(true);
         static constexpr char const* names[] = {"APERCU", "RUNS", "STARTPOS"};
         for (int i = 0; i < 3; ++i)
@@ -348,6 +399,7 @@ class Detail final : public Popup {
     bool setup(int id, std::string const& name, int tab, std::function<void()> changed) {
         if (!Popup::init(420.f, 280.f)) return false;
         m_id = id;
+        m_levelName = name;
         m_tab = std::clamp(tab, 0, 2);
         m_changed = std::move(changed);
         m_bgSprite->setVisible(false);
@@ -376,6 +428,10 @@ class Detail final : public Popup {
     }
 
 public:
+    void onEnter() override {
+        Popup::onEnter();
+        if (m_body) buildPage();
+    }
     static Detail* create(int id, std::string const& name, int tab = 0,
                           std::function<void()> changed = {}) {
         auto popup = new Detail();
