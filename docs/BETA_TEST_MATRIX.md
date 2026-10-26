@@ -1,37 +1,40 @@
-# Validation beta.3
+# Validation beta.4
 
-Beta.3 translates RDoD-owned labels, messages, settings and the packaged README into French. Gameplay terms (startpos, runs, grind, VIEW), level names, save keys and file names remain unchanged. Geometry and callbacks are identical to beta.2.
+Corrections issues de la vidéo MedalTVGeometryDash20261025165726788.mp4 : pages suivantes bloquées sur « Une autre requete est en cours » et onglet STARTPOS remplacé par le raccourci de recherche demandé. L'interface française, les 75 niveaux et le format de sauvegarde sont conservés.
 
-## Automated
+## Contrôles automatisés
 
-- Roadmap: 75 unique IDs, Nullscapes last, critical order preserved.
-- C++ data tests: round trip, malformed schema, bounds, duplicate IDs, invalid runs, non-destructive rejection.
-- Layout bounds: header, tabs, toolbar, content and footer do not overlap; tabs fit the same window at 568x320, 480x270, 800x600 and 1024x576 logical points.
-- Windows Geode 5.11.2 build via Actions.
+- Parcours : 75 identifiants uniques, ordre critique inchangé, Nullscapes dernier.
+- Sauvegardes C++ : aller-retour, schéma invalide, limites, doublons, runs invalides et rejet sans écrasement.
+- Dimensions : séparation titre / onglets / recherche / contenu / pied de page aux quatre tailles d'écran existantes.
+- Routage : délégué précédent non nul, changement de délégué par un autre mod, réponse annulée, réponses hors ordre, ancienne réponse après remplacement et nouvelle demande depuis un callback.
+- Recherche : Acu, Forest Temple tronqué comme dans la vidéo et nom long.
+- Compilation et paquet Windows avec Geode 5.11.2 dans GitHub Actions.
 
-## Required in Geometry Dash 2.2081
+## À valider dans Geometry Dash 2.2081
 
-Not executable in this environment. Do not merge main before these pass.
+Ces tests ne sont pas exécutables dans cet environnement. Ne pas fusionner dans main avant validation.
 
-- Open and close ten times; browse all eight pages; VIEW opens the right level.
-- Search/filter during requests; close before response; repeat Refresh; test offline.
-- Check layout with textures/thumbnails and without other mods.
-- Check that the information gutter does not cover native VIEW, titles, completion icons or thumbnail controls.
-- Switch sections during fetch: a late response must not replace STARTPOS or PROGRESSION.
-- Confirm no tool button sits outside the window and no tab overlaps the list frame.
-- Add notes, favorite, goal, run and preset; restart GD and check persistence.
-- Switch Overview / Runs / Startpos in the detail popup; notes persist and only the selected form is shown.
-- Select, edit and delete runs and markers. Adding a marker makes its level appear in Saved Only.
-- Empty STARTPOS shows AUCUN STARTPOS and CHOISIR UN NIVEAU, with pagination hidden.
-- Export JSON; cancel restore; restore; reject a corrupt file; verify the recovery file.
-- Native progress is read only and the local best never decreases.
-- Check Integrated Demonlist, BetterInfo, Happy Textures and Level Thumbnails.
+- Parcourir les huit pages de PARCOURS avec les mêmes mods que dans la vidéo. Les cellules et VIEW doivent charger après la page 1 sans le message de blocage.
+- Ouvrir STARTPOS sans aucun repère enregistré : les 75 niveaux doivent être proposés avec les mêmes cellules natives que PARCOURS.
+- STARTPOS → Forest Temple → VIEW : ouvrir les résultats natifs pour « Forest Temple startp », avec les copies d'entraînement. Ne pas ouvrir directement le niveau original ou sélectionner automatiquement une copie.
+- Refaire le test avec Acu et un nom long ; la disponibilité et le nommage des copies dépendent des niveaux publiés sur GD.
+- Dans PARCOURS, VIEW d'une cellule chargée ouvre toujours la fiche du bon niveau original.
+- Revenir des résultats STARTPOS, parcourir une autre page, utiliser VIEW puis changer d'onglet. La recherche, le filtre et la page restent propres à chaque vue.
+- Pendant le chargement ou hors connexion, VIEW reste présent : recherche de copies dans STARTPOS, recherche par ID dans PARCOURS.
+- Changer rapidement de page, chercher ou filtrer pendant une requête ; une réponse ancienne ne doit pas remplacer la sélection actuelle ou PROGRESSION. La page courante doit ensuite charger automatiquement.
+- Fermer le mod pendant une requête, lancer une recherche native différente, puis attendre la réponse précédente. Elle ne doit pas remplacer les résultats natifs ni laisser de pointeur vers le menu fermé.
+- Cliquer plusieurs fois sur ACTUALISER, tester une erreur réseau et le délai de 15 secondes, puis réessayer après reconnexion.
+- Ouvrir et fermer dix fois ; vérifier les textures, miniatures, contrôles et le bouton i sans chevauchement.
+- Ajouter notes, favori, objectif, run et repère manuel ; redémarrer GD et vérifier la conservation des anciennes sauvegardes.
+- Exporter, annuler une restauration, restaurer, rejeter un fichier corrompu et vérifier le fichier de secours.
+- Confirmer que la progression native est seulement lue et que le meilleur pourcentage local ne diminue pas.
+- Vérifier Integrated Demonlist, BetterInfo, Happy Textures, Level Thumbnails et le mod de startpos visible dans la vidéo.
 
-## Remaining work from the design report
+## Fonctions du rapport restant à développer
 
-- STARTPOS stores percentage markers. Native capture and an isolated TEST engine remain unimplemented; this UI has no launch button.
-- Native progress is read on entry, refresh, detail open and response; automatic session statistics and background synchronization remain unimplemented.
-- This view has a local cache, serialized requests, response-key/generation checks and a 15-second timeout. A shared cross-mod request broker remains unimplemented.
-- Existing manual DONE flags stay under their old keys and are not counted as verified GD completions.
-- The existing screenshot download in the build remains; a supplied personal screenshot is needed to replace it.
-- Run dates remain unimplemented.
+- Les repères manuels restent des noms / pourcentages. La capture native et le moteur TEST isolé ne sont pas implémentés. Le nouvel onglet STARTPOS utilise les recherches GD demandées par l'utilisateur.
+- Statistiques automatiques de session, synchronisation en arrière-plan et dates de runs.
+- Le routage est limité aux clés de requêtes RDoD ; il ne remplace pas un broker réseau général entre tous les mods. Les conflits de mods doivent être validés en jeu.
+- Les anciennes coches DONE restent sous leurs clés historiques et ne sont pas comptées comme des victoires GD vérifiées.
+- Le téléchargement existant de la capture pendant le build reste en place ; une capture personnelle fournie doit le remplacer.

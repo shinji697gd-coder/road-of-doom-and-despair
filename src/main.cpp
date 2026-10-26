@@ -3,6 +3,7 @@
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/LevelCell.hpp>
+#include <Geode/binding/LevelBrowserLayer.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <array>
@@ -12,6 +13,8 @@
 #include "Training.hpp"
 #include "ui/Layout.hpp"
 #include "ui/ToolsPopup.hpp"
+#include "OnlineLevels.hpp"
+#include "SearchQuery.hpp"
 
 using namespace geode::prelude;
 
@@ -54,12 +57,13 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     std::map<int, Ref<GJGameLevel>> m_cache;
     std::array<ViewState, 2> m_views;
     int m_tab = 0;
-    bool m_showAllStartpos = false;
     bool m_inFlight = false;
+    bool m_forceRefresh = false;
     unsigned m_generation = 0;
     unsigned m_requestGeneration = 0;
     std::string m_requestKey;
     std::vector<int> m_requestedIds;
+    Ref<GJSearchObject> m_requestSearch;
     std::string m_networkMessage;
 
     CCNode* m_window = nullptr;
@@ -111,14 +115,10 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         for (size_t i = 0; i < m_roadmap.size(); ++i) {
             const auto& entry = m_roadmap[i];
             const auto& p = store.levels[entry.id];
-            if (m_tab == 1) {
-                if (!m_showAllStartpos && p.presets.empty()) continue;
-            } else {
-                if (state.filter == 1 && p.best == 100) continue;
-                if (state.filter == 2 && p.best != 100) continue;
-                if (state.filter == 3 && !p.favorite) continue;
-                if (state.filter == 4 && store.goal != entry.id) continue;
-            }
+            if (state.filter == 1 && p.best == 100) continue;
+            if (state.filter == 2 && p.best != 100) continue;
+            if (state.filter == 3 && !p.favorite) continue;
+            if (state.filter == 4 && store.goal != entry.id) continue;
             if (lower(entry.name).find(state.query) != std::string::npos ||
                 std::to_string(entry.id).find(state.query) != std::string::npos)
                 m_results.push_back(i);
@@ -135,9 +135,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         m_toolbar->setVisible(m_tab != 2);
         m_dashboardHeading->setVisible(m_tab == 2);
         if (m_tab != 2) {
-            const auto caption = m_tab == 1 ?
-                (m_showAllStartpos ? "TOUS" : "ENREGISTRES") : filters[view().filter];
-            roadui::updateButton(m_filter, caption);
+            roadui::updateButton(m_filter, filters[view().filter]);
         }
         const auto& store = training::Store::get();
         const auto done = std::count_if(m_roadmap.begin(), m_roadmap.end(),
@@ -164,16 +162,13 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
     void renderEmpty() {
         using namespace roadui::layout;
         clearContent();
-        const bool emptyStartpos = m_tab == 1 && !m_showAllStartpos && view().query.empty();
-        roadui::label(m_content, emptyStartpos ? "AUCUN STARTPOS" : "AUCUN RESULTAT",
+        roadui::label(m_content, "AUCUN RESULTAT",
                       contentWidth / 2, 110, contentWidth - 28, .44f);
-        roadui::label(m_content, emptyStartpos ?
-                      "Choisis un niveau pour creer ton premier startpos." :
-                      "Essaie un autre nom, ID ou filtre.",
+        roadui::label(m_content, "Essaie un autre nom, ID ou filtre.",
                       contentWidth / 2, 83, contentWidth - 28, .27f, roadui::muted);
         auto actions = roadui::menu(m_content);
         roadui::button(actions, this, menu_selector(RoadmapListLayer::onResetSearch),
-                       emptyStartpos ? "CHOISIR UN NIVEAU" : "TOUT AFFICHER",
+                       "TOUT AFFICHER",
                        contentWidth / 2, 46, 188, 26, true);
         updateChrome();
     }
@@ -193,36 +188,16 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         openDetail(static_cast<size_t>(sender->getTag()), m_tab == 1 ? 2 : 0);
     }
 
-    void renderStartpos() {
-        using namespace roadui::layout;
-        clearContent();
-        if (m_results.empty()) { renderEmpty(); return; }
-        const auto begin = view().page * pageSize;
-        const auto end = std::min(m_results.size(), begin + pageSize);
-        const auto count = end - begin;
-        constexpr float rowHeight = 56.f;
-        const float height = std::max(contentHeight, count * rowHeight);
-        m_scroll = ScrollLayer::create(CCSize{contentWidth, contentHeight});
-        m_scroll->m_contentLayer->setContentSize({contentWidth, height});
-        m_content->addChild(m_scroll);
-        for (size_t i = begin; i < end; ++i) {
-            const auto index = m_results[i];
-            const auto& entry = m_roadmap[index];
-            const auto count = training::Store::get().levels[entry.id].presets.size();
-            const float y = height - (i - begin + 1) * rowHeight;
-            auto row = roadui::panel(m_scroll->m_contentLayer, 0, y + 2,
-                                     contentWidth, rowHeight - 4);
-            roadui::label(row, entry.name, 12, 34, 294, .42f, roadui::text, true);
-            roadui::label(row, count ? fmt::format("{} startpos enregistres", count) : "Aucun startpos enregistre",
-                          12, 14, 290, .26f, roadui::muted, true);
-            auto actions = roadui::menu(row);
-            auto button = roadui::button(actions, this, menu_selector(RoadmapListLayer::onDetail),
-                                         count ? "GERER" : "AJOUTER",
-                                         contentWidth - 56, 26, 94, 25, count > 0);
-            button->setTag(static_cast<int>(index));
-        }
-        m_scroll->scrollToTop();
-        updateChrome();
+    void onView(CCObject* sender) {
+        const auto index = static_cast<size_t>(sender->getTag());
+        if (index >= m_roadmap.size()) return;
+        const auto& entry = m_roadmap[index];
+        const auto query = m_tab == 1 ? road::startposQuery(entry.name) : std::to_string(entry.id);
+        // Building the native browser can start its request before our onExit.
+        stopRequest();
+        auto search = GJSearchObject::create(SearchType::Search, query);
+        CCDirector::get()->pushScene(
+            CCTransitionFade::create(.3f, LevelBrowserLayer::scene(search)));
     }
 
     void renderDashboard() {
@@ -285,6 +260,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             m_scroll->m_contentLayer->addChild(row);
             auto cached = m_cache.find(entry.id);
             GJGameLevel* level = cached == m_cache.end() ? nullptr : cached->second.data();
+            bool hasCell = false;
             if (level) {
                 auto cell = LevelCell::create(nativeCellWidth, rowHeight);
                 if (cell) {
@@ -298,22 +274,41 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
                             creator->setAnchorPoint({0, .5f});
                             creator->setPosition({50, 53});
                         }
-                        if (auto view = menu->getChildByID("view-button"))
+                        auto view = typeinfo_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("view-button"));
+                        if (!view) view = cell->m_button;
+                        if (view) {
                             view->setPosition({nativeCellWidth - 43, rowHeight * .5f});
+                            if (m_tab == 1) {
+                                view->setTag(static_cast<int>(index));
+                                view->setTarget(this, menu_selector(RoadmapListLayer::onView));
+                            }
+                        }
                     }
                     cell->updateBGColor(static_cast<int>(i - begin));
                     row->addChild(cell);
+                    hasCell = true;
                 }
-            } else {
+            }
+            if (!hasCell) {
                 roadui::rect(row, 0, 0, nativeCellWidth, rowHeight,
                              (i - begin) % 2 ? ccColor4B{65, 57, 49, 255} :
                                               ccColor4B{56, 49, 44, 255});
-                roadui::label(row, entry.name, 14, 59, nativeCellWidth - 30, .49f,
+                roadui::label(row, entry.name, 14, 59, nativeCellWidth - 108, .49f,
                               roadui::text, true);
                 roadui::label(row, fmt::format("ID {}  /  {}", entry.id,
                               m_inFlight ? std::string("Chargement...") :
                               (m_networkMessage.empty() ? "Infos indisponibles - Actualise pour reessayer" : m_networkMessage)),
-                              14, 29, nativeCellWidth - 30, .26f, roadui::muted, true);
+                              14, 29, nativeCellWidth - 108, .26f, roadui::muted, true);
+                // VIEW remains usable even if metadata is slow or unavailable.
+                auto actions = roadui::menu(row);
+                auto sprite = ButtonSprite::create("VIEW");
+                sprite->setScale(.55f);
+                auto view = CCMenuItemSpriteExtra::create(sprite, this,
+                    menu_selector(RoadmapListLayer::onView));
+                view->setPosition({nativeCellWidth - 43, rowHeight * .5f});
+                view->setTag(static_cast<int>(index));
+                view->setID("view-button");
+                actions->addChild(view);
             }
             // RDoD owns a narrow gutter outside the native cell. Nothing is
             // inserted over its title, completion badge, VIEW or thumbnail.
@@ -339,7 +334,6 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
 
     void render() {
         if (m_tab == 2) renderDashboard();
-        else if (m_tab == 1) renderStartpos();
         else renderRoadmap();
     }
 
@@ -351,22 +345,42 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
 
     void stopRequest() {
         unschedule(schedule_selector(RoadmapListLayer::onRequestTimeout));
-        auto manager = GameLevelManager::get();
-        if (manager->m_levelManagerDelegate == this)
-            manager->m_levelManagerDelegate = nullptr;
+        unschedule(schedule_selector(RoadmapListLayer::onRequestRetry));
+        roadnet::replies.cancel(m_requestKey);
         m_inFlight = false;
         m_requestKey.clear();
         m_requestedIds.clear();
+        m_requestSearch = nullptr;
     }
 
     void onRequestTimeout(float) {
+        const bool stale = m_requestGeneration != m_generation;
         stopRequest();
         m_networkMessage = "Delai depasse. Actualise pour reessayer.";
-        if (m_tab == 0) renderRoadmap();
+        render();
+        if (stale && m_tab != 2) loadPage();
+    }
+
+    void onRequestRetry(float) {
+        if (!m_inFlight || !m_requestSearch) return;
+        const std::string key = m_requestKey;
+        if (auto cached = GameLevelManager::get()->getStoredOnlineLevels(key.c_str())) {
+            loadLevelsFinished(cached, key.c_str(), 0);
+            return;
+        }
+        WeakRef<RoadmapListLayer> weak(this);
+        if (roadnet::fetch(m_requestSearch.data(), [weak, key](roadnet::LevelReply const& reply) {
+            auto self = weak.lock();
+            if (!self || !self->isRunning()) return;
+            if (reply.success) self->loadLevelsFinished(reply.levels.data(), key.c_str(), 0);
+            else self->loadLevelsFailed(key.c_str(), 0);
+        })) {
+            unschedule(schedule_selector(RoadmapListLayer::onRequestRetry));
+        }
     }
 
     void loadPage() {
-        if (m_tab != 0) { render(); return; }
+        if (m_tab == 2) { render(); return; }
         if (m_inFlight) { renderRoadmap(); return; }
         std::string ids;
         std::vector<int> missing;
@@ -382,16 +396,14 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         }
         if (missing.empty()) { renderRoadmap(); return; }
         auto manager = GameLevelManager::get();
-        if (manager->m_levelManagerDelegate && manager->m_levelManagerDelegate != this) {
-            m_networkMessage = "Une autre requete est en cours. Actualise pour reessayer.";
-            renderRoadmap();
-            return;
-        }
         auto search = GJSearchObject::create(SearchType::Type19);
         search->m_searchQuery = ids;
         m_requestKey = search->getKey();
         m_requestedIds = std::move(missing);
         m_requestGeneration = m_generation;
+        m_networkMessage.clear();
+        if (std::exchange(m_forceRefresh, false))
+            manager->m_storedLevels->removeObjectForKey(m_requestKey.c_str());
         if (auto cached = manager->getStoredOnlineLevels(m_requestKey.c_str())) {
             cacheLevels(cached);
             m_requestedIds.clear();
@@ -401,11 +413,12 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
             return;
         }
         m_inFlight = true;
+        m_requestSearch = search;
         m_networkMessage.clear();
-        manager->m_levelManagerDelegate = this;
         scheduleOnce(schedule_selector(RoadmapListLayer::onRequestTimeout), 15.f);
+        schedule(schedule_selector(RoadmapListLayer::onRequestRetry), .25f);
         renderRoadmap();
-        manager->getOnlineLevels(search);
+        onRequestRetry(0.f);
     }
 
     void cacheLevels(CCArray* levels) {
@@ -429,8 +442,7 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
 
     void onFilter(CCObject*) {
         if (m_tab == 2) return;
-        if (m_tab == 1) m_showAllStartpos = !m_showAllStartpos;
-        else view().filter = (view().filter + 1) % std::size(filters);
+        view().filter = (view().filter + 1) % std::size(filters);
         ++m_generation;
         rebuildResults(true);
         loadPage();
@@ -448,7 +460,6 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
         if (m_tab == 2) return;
         view().query.clear();
         view().filter = 0;
-        m_showAllStartpos = m_tab == 1;
         m_search->setString("");
         ++m_generation;
         rebuildResults(true);
@@ -473,7 +484,9 @@ class RoadmapListLayer final : public CCLayer, public LevelManagerDelegate {
 
     void onRefresh(CCObject*) {
         ++m_generation;
-        if (m_tab == 0 && !m_inFlight) {
+        stopRequest();
+        m_forceRefresh = m_tab != 2;
+        if (m_tab != 2) {
             const auto begin = view().page * pageSize;
             const auto end = std::min(m_results.size(), begin + pageSize);
             for (size_t i = begin; i < end; ++i) m_cache.erase(m_roadmap[m_results[i]].id);
@@ -608,7 +621,7 @@ public:
         // response replace a different page or the progression dashboard.
         rebuildResults();
         render();
-        if (stale && m_tab == 0) loadPage();
+        if (stale && m_tab != 2) loadPage();
     }
 
     void loadLevelsFailed(const char* key, int) override {
@@ -617,7 +630,7 @@ public:
         stopRequest();
         m_networkMessage = "Echec du chargement. Actualise pour reessayer.";
         render();
-        if (stale && m_tab == 0) loadPage();
+        if (stale && m_tab != 2) loadPage();
     }
 
     void setupPageInfo(gd::string, const char*) override { updateChrome(); }
@@ -631,11 +644,6 @@ public:
 
     void keyBackClicked() override { onBack(nullptr); }
 
-    ~RoadmapListLayer() override {
-        auto manager = GameLevelManager::get();
-        if (manager->m_levelManagerDelegate == this)
-            manager->m_levelManagerDelegate = nullptr;
-    }
 };
 
 // The only injected entry point remains the search-filter menu.

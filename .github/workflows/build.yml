@@ -22,6 +22,12 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/layout.cpp -o layout-tests
           ./layout-tests
+      - name: Request routing and startpos searches
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/request_routing.cpp -o request-routing-tests
+          ./request-routing-tests
+          g++ -std=c++20 -Wall -Wextra -Werror tests/search_query.cpp -o search-query-tests
+          ./search-query-tests
   build:
     needs: checks
     runs-on: windows-latest
