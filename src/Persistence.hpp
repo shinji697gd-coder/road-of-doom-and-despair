@@ -83,6 +83,7 @@ inline std::string date(std::int64_t value) {
 }
 inline std::string duration(double seconds) {
     const auto value = static_cast<std::int64_t>(seconds);
+    if (value < 3600) return fmt::format("{}m {:02}s", value / 60, value % 60);
     return fmt::format("{}h {:02}m", value / 3600, value / 60 % 60);
 }
 inline std::string goalCaption(int owner) {

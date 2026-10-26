@@ -56,13 +56,19 @@ class OpenCopyPopup final : public Popup {
         }
         WeakRef<OpenCopyPopup> weak(this);
         if (roadnet::fetch(m_search.data(), [weak](roadnet::LevelReply const& result) {
-            if (auto self = weak.lock(); self && self->m_open) {
+            if (auto self = weak.lock(); self && self->m_open && self->isRunning()) {
                 if (result.success) self->finish(result.levels.data());
                 else self->fail();
             }
         })) unschedule(schedule_selector(OpenCopyPopup::retry));
     }
 public:
+    void onExit() override {
+        m_open = false;
+        roadnet::replies.cancel(m_key);
+        unscheduleAllSelectors();
+        Popup::onExit();
+    }
     static void open(int copy) {
         auto popup = new OpenCopyPopup();
         if (!popup->init(310, 140)) { delete popup; return; }
@@ -104,9 +110,12 @@ class $modify(RoadmapCopyChoice, LevelCell) {
             return;
         }
         Ref<GJGameLevel> level(m_level);
+        WeakRef<CCScene> origin(scene);
         createQuickPopup("Ta copie startpos ?",
             "Choisir cette copie pour ouvrir directement sa fiche depuis STARTPOS ?",
-            "Voir seulement", "Choisir", [owner, copy, level](FLAlertLayer*, bool choose) {
+            "Voir seulement", "Choisir", [owner, copy, level, origin](FLAlertLayer*, bool choose) {
+                auto source = origin.lock();
+                if (!source || CCDirector::get()->getRunningScene() != source.data()) return;
                 if (choose) {
                     auto& data = training::Extras::get();
                     if (!data.setCopy(owner, copy)) {

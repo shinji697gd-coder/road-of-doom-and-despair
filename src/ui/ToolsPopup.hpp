@@ -16,8 +16,9 @@ class AutoBackupPicker final : public Popup {
         const auto index = static_cast<std::size_t>(sender->getTag());
         if (index >= m_files.size()) return;
         const auto file = m_files[index];
-        if (m_select) m_select(file);
+        auto select = m_select;
         Popup::onClose(nullptr);
+        if (select) select(file);
     }
 public:
     static void open(std::function<void(std::filesystem::path)> select) {
