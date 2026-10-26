@@ -33,10 +33,17 @@ inline void autoBackup() {
     if (writeSnapshot(autoBackupDir(), stamp, envelope.dump())) last = clock;
     else log::warn("[RDoD] Automatic backup failed; previous snapshots retained");
 }
+inline void persistToDisk() {
+    // setSavedValue alone is normally flushed when GD closes. Session
+    // checkpoints need an explicit write on the main game thread.
+    if (auto result = Mod::get()->saveData(); !result)
+        log::warn("[RDoD] Unable to persist mod data: {}", result.unwrapErr());
+}
 inline void Store::save() {
     if (!writable) return;
     autoBackup();
     Mod::get()->setSavedValue("training-v1", encode());
+    persistToDisk();
 }
 inline Store& Store::get() {
     static Store store;
@@ -55,6 +62,7 @@ inline void Extras::save() {
     if (!writable) return;
     autoBackup();
     Mod::get()->setSavedValue("training-extra-v1", encode());
+    persistToDisk();
 }
 inline Extras& Extras::get() {
     static Extras data;
