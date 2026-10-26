@@ -13,18 +13,24 @@
 #include <vector>
 
 namespace training {
-inline bool knownLevel(int id) {
-    static const auto ids = [] {
-        std::set<int> result;
+inline std::map<int, std::string> const& levelCatalog() {
+    static const auto catalog = [] {
+        std::map<int, std::string> result;
         std::istringstream input(road::levels);
         std::string line;
         while (std::getline(input, line)) {
             const auto separator = line.find('|');
-            if (separator != std::string::npos) result.insert(std::stoi(line.substr(separator + 1)));
+            if (separator != std::string::npos)
+                result.emplace(std::stoi(line.substr(separator + 1)), line.substr(0, separator));
         }
         return result;
     }();
-    return ids.contains(id);
+    return catalog;
+}
+inline bool knownLevel(int id) { return levelCatalog().contains(id); }
+inline std::string levelName(int id) {
+    auto found = levelCatalog().find(id);
+    return found == levelCatalog().end() ? "Niveau hors parcours" : found->second;
 }
 
 struct Record { int best = 0; std::int64_t observed = 0; };
@@ -47,9 +53,12 @@ struct Session {
 // dual-player callbacks and pause/resume cannot increment it twice.
 struct AttemptCounter {
     bool open = false;
+    int suspended = 0;
     void close() { open = false; }
+    void suspend() { ++suspended; close(); }
+    void resume() { if (suspended > 0) --suspended; }
     void tick(Session& session, bool practice, double elapsed, bool active) {
-        if (!active || !std::isfinite(elapsed) || elapsed < 0) return;
+        if (suspended || !active || !std::isfinite(elapsed) || elapsed < 0) return;
         const auto mode = practice ? 1 : 0;
         if (!open) {
             session.attempts[mode] = std::min(10000000, session.attempts[mode] + 1);

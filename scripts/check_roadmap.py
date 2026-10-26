@@ -37,7 +37,7 @@ assert rows.index("Shardscapes|79997992") == rows.index(
     "Congregation|68668045"
 ) + 1, "Shardscapes must follow Congregation"
 assert META["id"] == "gayan.road-of-doom", "Unexpected mod ID"
-assert META["version"] == "v1.0.0-beta.5", "Unexpected beta version"
+assert META["version"] == "v1.0.0-beta.6", "Unexpected beta version"
 assert META["geode"] == "5.11.2", "Unexpected Geode SDK target"
 assert META["gd"]["win"] == "2.2081", "Unexpected Geometry Dash target"
 

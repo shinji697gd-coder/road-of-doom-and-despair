@@ -1,4 +1,13 @@
-# Validation bêta.5
+# Validation bêta.6
+
+## Correctifs de bêta.6
+
+- Captures image(20261026-065859).png, image(20261026-065936).png et image(20261026-065941).png : RECORDS utilise les noms Fear Not / CraZy II, les sessions utilisent aussi les noms.
+- Démarrage du suivi après disponibilité du joueur et du niveau, sans exclure les sessions à création différée d'objets. Échantillonnage Cocos indépendant de postUpdate, avec logs de démarrage / exclusion.
+- Tests de projection des trois vues : noms, tri, totaux, filtre par niveau et conservation du classement des anciennes copies après modification de préférence.
+- Test de reset imbriqué dans un changement practice : un seul nouveau départ.
+- En jeu : ouvrir un original du parcours, faire trois essais, quitter et vérifier ORIGINAL. Lier une copie, refaire trois essais dessus et vérifier COPIES, sans déplacement des comptes de l'original.
+- Tester avec le chemin de chargement normal de GD et avec les autres mods de l'utilisateur. Les hooks ne sont pas exécutables dans cet environnement.
 
 ## Automatisé
 

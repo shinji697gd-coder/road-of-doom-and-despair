@@ -34,6 +34,17 @@ int main() {
     counter.tick(session, true, .1, true);
     counter.tick(session, true, 10, true); // Long suspension not counted as play time.
     assert(session.attempts[1] == 1 && session.seconds[1] == .1);
+    counter.suspend(); // Switching to practice can call reset internally.
+    counter.tick(session, true, .1, true);
+    counter.suspend(); // Nested reset must not start an extra attempt.
+    counter.tick(session, true, .1, true);
+    counter.resume();
+    counter.tick(session, true, .1, true);
+    assert(session.attempts[1] == 1);
+    counter.resume();
+    counter.tick(session, true, .1, true);
+    counter.tick(session, true, .1, true);
+    assert(session.attempts[1] == 2);
     data.putSession(session);
     data.putSession(session);
     assert(data.sessions.size() == 1);

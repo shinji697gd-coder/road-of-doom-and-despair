@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Persistence.hpp"
+#include "../StatsData.hpp"
 #include "Widgets.hpp"
 #include <Geode/ui/ScrollLayer.hpp>
 
@@ -16,52 +17,42 @@ class StatsPopup final : public Popup {
         static const char* captions[] = {"ORIGINAL", "COPIES", "RECORDS"};
         for (int i = 0; i < 3; ++i) updateButton(m_tabs[i], captions[i], m_tab == i);
         auto& data = training::Extras::get();
-        struct Row { std::int64_t time; std::string first, second; };
-        std::vector<Row> rows;
-        std::array<std::int64_t, 2> attempts{};
-        std::array<double, 2> seconds{};
-        if (m_tab == 2) {
-            for (auto const& [owner, value] : data.levels) {
-                if (m_owner && owner != m_owner) continue;
-                for (auto const& record : value.records)
-                    rows.push_back({record.observed,
-                        fmt::format("{}%  /  {}", record.best, training::date(record.observed)),
-                        m_owner ? "Record normal observe sur cet appareil" : fmt::format("Niveau {}", owner)});
-            }
-        } else {
-            for (auto const& session : data.sessions) {
-                if ((m_owner && session.owner != m_owner) ||
-                    (session.played != session.owner) != (m_tab == 1)) continue;
-                if (session.attempts[0] + session.attempts[1] == 0) continue;
-                for (int i = 0; i < 2; ++i) {
-                    attempts[i] += session.attempts[i];
-                    seconds[i] += session.seconds[i];
-                }
-                rows.push_back({session.started,
-                    fmt::format("{} / ID {}", training::date(session.started), session.played),
-                    fmt::format("{} normaux / {} practice/test  |  {}", session.attempts[0],
-                        session.attempts[1], training::duration(session.seconds[0] + session.seconds[1]))});
-            }
-        }
-        std::stable_sort(rows.begin(), rows.end(), [](Row const& a, Row const& b) { return a.time > b.time; });
+        const auto view = training::statsView(data, m_owner, m_tab);
         label(m_body, m_tab == 2 ? "Dates d'observation, pas les dates des anciens records." :
-              fmt::format("{} essais normaux / {} practice/test", attempts[0], attempts[1]),
+              fmt::format("{} essais normaux / {} practice/test", view.attempts[0], view.attempts[1]),
               210, 193, 388, .27f, muted);
-        label(m_body, m_tab == 2 ? fmt::format("{} nouveaux records suivis", rows.size()) :
-              fmt::format("Temps actif : {} / practice : {}", training::duration(seconds[0]),
-                          training::duration(seconds[1])),
+        label(m_body, m_tab == 2 ? fmt::format("{} nouveaux records suivis", view.rows.size()) :
+              fmt::format("Temps actif : {} / practice : {}", training::duration(view.seconds[0]),
+                          training::duration(view.seconds[1])),
               210, 171, 388, .29f, green);
         auto list = ScrollLayer::create(CCSize{388, 116});
         list->setPosition({16, 40});
-        const float height = std::max(116.f, rows.size() * 44.f);
+        constexpr float rowHeight = 60;
+        const float height = std::max(116.f, view.rows.size() * rowHeight);
         list->m_contentLayer->setContentSize({388, height});
         m_body->addChild(list);
-        if (rows.empty()) label(list->m_contentLayer, "Aucune donnee depuis l'activation du suivi.",
-                                194, 58, 366, .28f, muted);
-        for (std::size_t i = 0; i < rows.size(); ++i) {
-            auto row = panel(list->m_contentLayer, 0, height - (i + 1) * 44.f, 388, 42, inset);
-            label(row, rows[i].first, 10, 29, 366, .28f, text, true);
-            label(row, rows[i].second, 10, 12, 366, .24f, muted, true);
+        if (view.rows.empty()) {
+            const auto message = m_tab == 2 ? "Aucun nouveau record observe pour le moment." :
+                !data.writable ? "Sauvegarde en lecture seule : restaure une copie valide." :
+                !Mod::get()->getSettingValue<bool>("auto-session-stats") ?
+                    "Active les stats de session dans les parametres du mod." :
+                m_tab == 1 ? "Lie une copie via i / STARTPOS, puis joue dessus." :
+                    "Joue un niveau du parcours, puis reviens consulter ses stats.";
+            label(list->m_contentLayer, message, 194, 58, 366, .27f, muted);
+        }
+        for (std::size_t i = 0; i < view.rows.size(); ++i) {
+            const auto& value = view.rows[i];
+            auto row = panel(list->m_contentLayer, 0, height - (i + 1) * rowHeight,
+                             388, rowHeight - 2, inset);
+            label(row, m_tab == 2 ? fmt::format("{} / {}%", value.name, value.best) : value.name,
+                  10, 44, 366, .32f, text, true);
+            label(row, training::date(value.time) +
+                  (m_tab == 2 ? " / record normal" : value.copy ? " / copie startpos" : " / original"),
+                  10, 27, 366, .24f, muted, true);
+            label(row, m_tab == 2 ? "Progression normale observee sur cet appareil" :
+                  fmt::format("{} normaux / {} practice-test | {}", value.attempts[0],
+                      value.attempts[1], training::duration(value.seconds[0] + value.seconds[1])),
+                  10, 11, 366, .23f, muted, true);
         }
         list->scrollToTop();
     }

@@ -1,4 +1,6 @@
-# Sauvegardes locales — bêta.5
+# Sauvegardes locales — bêta.6
+
+La bêta.6 conserve exactement les clés, formats et champs sérialisés de bêta.5. Les noms affichés sont résolus depuis le catalogue local des 75 niveaux ; aucun accès réseau ni migration n'est nécessaire pour les anciens records.
 
 ## Compatibilité
 

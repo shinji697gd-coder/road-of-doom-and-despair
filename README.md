@@ -1,6 +1,8 @@
-# The Road of Doom and Despair — bêta.5
+# The Road of Doom and Despair — bêta.6
 
 Windows x64, Geometry Dash 2.2081, Geode 5.11.2. Interface française, termes de jeu et noms des 75 niveaux conservés.
+
+La bêta.6 corrige les vues de stats signalées dans les captures : les noms remplacent les IDs dans les sessions et les records. Le suivi commence lorsque le PlayLayer est réellement prêt, même avec création différée des objets. Un échantillonnage Cocos à 0,1 seconde et les événements de départ / reset / pause / fin remplacent la dépendance au chemin physique postUpdate. Les données et sauvegardes de bêta.5 restent compatibles ; les sessions qui n'avaient pas été enregistrées ne sont pas inventées.
 
 ## Copie startpos préférée
 
@@ -19,6 +21,8 @@ PROGRESSION → STATS affiche toutes les sessions. i → APERCU → STATS limite
 - Le temps est du temps actif réel, mesuré avec une horloge monotone. Pauses et interruptions de plus d'une seconde ne sont pas ajoutées. Le suivi exclut éditeur, replays et platformer.
 - Le suivi débute avec cette version : aucun ancien temps de jeu ni anciennes tentatives ne sont reconstitués. Les 500 sessions les plus récentes sont conservées.
 - RECORDS affiche les augmentations du meilleur pourcentage normal observées après l'activation du suivi. Le premier pourcentage sert de référence sans date inventée. Une date est une date d'observation sur cet appareil, pas une preuve de la date exacte du record.
+- Chaque ligne affiche le nom du niveau du parcours. Dans COPIES, la mention « copie startpos » identifie la source ; changer de copie préférée ne déplace pas les anciennes sessions.
+- Une vue vide indique maintenant si le suivi est désactivé, en lecture seule ou si une copie doit être liée avant de jouer.
 - Les stats sont sauvegardées au début, après la première tentative, toutes les 30 secondes, à la pause, à la fin et en quittant. Un arrêt brutal peut perdre la dernière tranche non sauvegardée.
 
 Les hooks lisent les événements de jeu ; ils n'écrivent ni progression, ni physique, ni compteurs de tentatives de GD. Ce suivi n'est pas un système anti-triche et les interactions avec les autres mods nécessitent une validation en jeu. Le réglage Stats automatiques de session désactive le suivi ; changer ce réglage prend entièrement effet au prochain lancement de niveau.

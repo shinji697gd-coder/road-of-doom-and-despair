@@ -34,6 +34,8 @@ jobs:
           ./extra-data-tests
           g++ -std=c++20 -Wall -Wextra -Werror tests/backup_files.cpp -o backup-file-tests
           ./backup-file-tests
+          g++ -std=c++20 -Wall -Wextra -Werror tests/stats_view.cpp -o stats-view-tests
+          ./stats-view-tests
   build:
     needs: checks
     runs-on: windows-latest
